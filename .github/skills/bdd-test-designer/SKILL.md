@@ -1,3 +1,8 @@
+---
+name: bdd-test-designer
+description: Expert procedural guidance for BDD test design using Gherkin syntax and the Test Pyramid strategy (Unit, Integration, UI/E2E).
+---
+
 # BDD & Test Pyramid Designer
 
 ## Objective

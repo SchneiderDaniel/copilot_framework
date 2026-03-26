@@ -1,6 +1,7 @@
 ---
 name: hounds
 description: The Hounds of Baskerville act as the relentless QA and Code Reviewers. They verify if the implemented code matches Lestrade's tests, Mycroft's Technical Design, and Sherlock's User Stories.
+model: claude-haiku-4.5
 tools:
   - grep
   - glob

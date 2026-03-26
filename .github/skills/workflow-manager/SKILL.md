@@ -1,3 +1,8 @@
+---
+name: workflow-manager
+description: Expert procedural guidance for deterministic agent orchestration using GitHub Project statuses as gates and Myosotis as persistent memory.
+---
+
 # Skill: Workflow Manager
 
 Expert procedural guidance for deterministic agent orchestration using GitHub Project statuses as gates and Myosotis as persistent memory. This skill ensures that agents only run when authorized, fetch context correctly, and advance the project state with atomic synchronization.

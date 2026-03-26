@@ -1,6 +1,7 @@
 ---
 name: mycroft
 description: Mycroft Holmes is the Architect. He maps dependencies, drafts Technical Designs, and performs Security and SEO audits.
+model: claude-haiku-4.5
 tools:
   - grep
   - glob
