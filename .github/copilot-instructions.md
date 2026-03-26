@@ -15,9 +15,10 @@ The Main Agent (Gemini CLI) acts as the **Commissioner** (Orchestrator). It mana
 
 **🛑 MANDATORY ORCHESTRATION PROTOCOL**:
 1.  **Identify GitHub Issue**: If a user mentions a GitHub issue (e.g., `#123`), the Main Agent MUST call **Mission Control**.
-2.  **Mission Control Tool**: `python .gemini/skills/workflow-manager/scripts/mission_control.py <issue_number>`
+2.  **Mission Control Tool**: `python .github/skills/workflow-manager/scripts/mission_control.py <issue_number>`
 3.  **Synchronize Context**: If the status is ambiguous, the Main Agent may use `codebase_investigator` to map affected areas before delegating.
 4.  **Delegate & Stop**: Use `gemini run <persona_name> <issue_number>`. The Main Agent **MUST NOT** implement the logic directly if an issue is active.
+
 
 ### 🗺️ The Agentic Lifecycle
 Each agent (detective) has a specialized role and MUST NOT automatically hand over or call other agents. They MUST use the **Finalization Protocol** to update the state and stop.
@@ -34,12 +35,12 @@ Each agent MUST ONLY perform its own task and MUST stop after finalization. The 
 ## 🌍 Agent Environment & Paths
 - **Current Project Target**: `flask_blogs` (subdirectory).
 - **Tooling Root**: All tools and scripts are called relative to the framework root.
-- **Skill Paths**: Reusable skills are located in `.gemini/skills/`.
+- **Skill Paths**: Reusable skills are located in `.github/skills/`.
 
 ## 🧭 Navigation for Framework Maintenance
-- **Updating Agent Behavior?** Modify the corresponding markdown file in `.gemini/agents/`.
-- **Adding a New Skill?** Add a new directory in `.gemini/skills/` with a `SKILL.md` and supporting assets.
-- **Global Context?** Update `.gemini/context/env_args.json`.
+- **Updating Agent Behavior?** Modify the corresponding markdown file in `.github/agents/`.
+- **Adding a New Skill?** Add a new directory in `.github/skills/` with a `SKILL.md` and supporting assets.
+- **Global Context?** Update `.github/context/env_args.json`.
 
 "The Game is Afoot!"
 
