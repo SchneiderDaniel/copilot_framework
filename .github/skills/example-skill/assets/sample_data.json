@@ -1,0 +1,6 @@
+{
+  "name": "example-skill-asset",
+  "version": "1.0.0",
+  "description": "A sample JSON asset for the example skill.",
+  "tags": ["example", "template", "skills"]
+}

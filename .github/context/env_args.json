@@ -1,0 +1,24 @@
+{
+  "cli_args": {
+    "verbosity": "high",
+    "mode": "velocity",
+    "confirm_risk": "critical_only"
+  },
+  "environment": {
+    "os": "win32",
+    "projects": {
+      "general": {
+        "root_dir": "."
+      },
+      "flask_planhead": {
+        "root_dir": "flask_blogs/flask_planhead",
+        "python_path": "flask_blogs/flask_planhead",
+        "test_cmd": "powershell.exe -NoProfile -Command \"$env:PYTHONPATH='.'; python -m pytest\""
+      },
+      "flask_hippocooking": {
+        "root_dir": "flask_blogs/flask_hippocooking",
+        "python_path": "flask_blogs/flask_hippocooking"
+      }
+    }
+  }
+}
