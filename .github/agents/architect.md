@@ -1,7 +1,7 @@
 ---
 name: architect
 description: The Solutions Architect maps dependencies, drafts Technical Designs, and performs Security and SEO audits.
-model: claude-haiku-4.5
+model: gpt-5.1-codex-max
 tools:
   - grep
   - glob

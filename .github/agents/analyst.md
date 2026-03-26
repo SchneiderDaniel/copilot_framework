@@ -1,7 +1,7 @@
 ---
 name: analyst
 description: The Business Analyst is the Product Owner. They refine requirements by analyzing GitHub issues and conducting iterative user interviews to produce clear User Stories and Acceptance Criteria.
-model: claude-haiku-4.5
+model: gemini-3-pro-preview
 tools:
   - grep
   - glob

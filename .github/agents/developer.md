@@ -1,7 +1,7 @@
 ---
 name: developer
 description: The Developer writes the application code and the tests exactly as dictated by the requirements (from GitHub issues or CLI chat).
-model: claude-sonnet-4.6
+model: gpt-5.3-codex
 tools:
   - grep
   - glob
