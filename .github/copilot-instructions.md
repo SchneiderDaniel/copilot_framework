@@ -32,6 +32,8 @@ Each agent (detective) has a specialized role and MUST NOT automatically hand ov
 **🛑 AUTOMATION MANDATE**: 
 Each agent MUST ONLY perform its own task and MUST stop after finalization. The Commissioner (Main Agent) handles the overall flow.
 
+**🛑 ISSUE CLOSING FORBIDDEN**: No agent — including the Commissioner — may ever run `gh issue close`. Only the human reviewer closes GitHub issues. Agents may only advance the project board status.
+
 ## 🌍 Agent Environment & Paths
 - **Current Project Target**: `flask_blogs` (subdirectory).
 - **Tooling Root**: All tools and scripts are called relative to the framework root.
@@ -96,8 +98,13 @@ This mono-repo orchestrates three distinct Python applications under a single do
 
 ## 🌍 Localization (i18n) Mandate
 - **Hippocooking**: Dual-track. UI strings via Babel `_()`; Recipe content via dynamic JSON loader (`utils.py`).
-- **Planhead**: URL-param driven (`?lang=`). Session persistence. 
-- **Workflow**: All new UI strings MUST be wrapped in `_()` and compiled via `pybabel`.
+- **Planhead**: URL-param driven (`?lang=`). Session persistence.
+- **⚠️ Planhead Translation Pipeline (CRITICAL — always follow this order)**:
+  1. **Edit `translations.db`** (SQLite) — the single source of truth for all translations. Use SQL `UPDATE` statements to fill or correct `msgstr` values in the `translations` table.
+  2. **Export to .po/.mo** — run `python scripts/export_sqlite_to_mo.py` from `flask_planhead/` to regenerate all `.po` and `.mo` files from the DB.
+  3. **Never edit `.po` files directly** — they are generated artefacts. Changes will be overwritten on next export.
+  4. **Adding new strings**: wrap in `_()` in code → run `pybabel extract` + `pybabel update` to sync `.pot`/`.po` stubs → import stubs into DB via `python scripts/migrate_po_to_sqlite.py` → translate in DB → export.
+- **Supported locales**: `en`, `de`, `fr`, `es`. All four must be present in `translations.db` for every domain.
 
 ## ⚙️ Operational Protocols
 The development lifecycle is tailored to task complexity. Standard tasks follow the Research -> Strategy -> Execution (Plan-Act-Validate) workflow. For more complex features, refer to the available specialized agents.
