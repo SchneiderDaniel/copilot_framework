@@ -27,9 +27,10 @@ TRANSITIONS = {
         "design_revision_requested": "Technical Design"
     },
     "Review": {
-        "audit_passed": "Review",
+        "audit_passed": "Done",
         "failure": "Implementation",
         "test_revision_requested": "Test Design",
         "design_revision_requested": "Technical Design"
+        # Note: closing the GitHub issue is done by the human reviewer only.
     }
 }
