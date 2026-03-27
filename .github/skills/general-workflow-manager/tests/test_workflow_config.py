@@ -12,11 +12,16 @@ def test_all_personas_present():
     assert all(p in GATES for p in expected_personas)
 
 def test_all_statuses_have_transitions():
-    """T-UC-2: Verify every status in GATES has a transition for both success and failure."""
+    """T-UC-2: Verify every status in GATES has a transition for both success/audit_passed and failure."""
+    # The Review stage uses 'audit_passed' instead of 'success' to prevent agents from closing issues.
+    success_outcome = {
+        "Review": "audit_passed"
+    }
     for persona, allowed_statuses in GATES.items():
         for status in allowed_statuses:
             assert status in TRANSITIONS, f"Status '{status}' (allowed for {persona}) has no transitions defined."
-            assert "success" in TRANSITIONS[status], f"Status '{status}' has no 'success' outcome."
+            expected_success = success_outcome.get(status, "success")
+            assert expected_success in TRANSITIONS[status], f"Status '{status}' has no '{expected_success}' outcome."
             assert "failure" in TRANSITIONS[status], f"Status '{status}' has no 'failure' outcome."
 
 def test_transition_targets_exist():

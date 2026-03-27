@@ -27,7 +27,7 @@ TRANSITIONS = {
         "design_revision_requested": "Technical Design"
     },
     "Review": {
-        "success": "Done",
+        "audit_passed": "Review",
         "failure": "Implementation",
         "test_revision_requested": "Test Design",
         "design_revision_requested": "Technical Design"
