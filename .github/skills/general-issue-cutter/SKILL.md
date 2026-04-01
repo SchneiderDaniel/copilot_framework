@@ -9,7 +9,7 @@ Expert procedural guidance for decomposing large GitHub epics into small, ordere
 
 ## 🛠️ Prerequisites
 - **GitHub CLI (`gh`)**: Must be installed and authenticated (`gh auth status`).
-- **Target Repository**: `SchneiderDaniel/flask_blogs` (default). Override if the user specifies another repo.
+- **Target Repository**: `SchneiderDaniel/copilot_framework` (default). Override if the user specifies another repo.
 
 ---
 
@@ -32,7 +32,7 @@ Avoid horizontal slices (e.g., "do all database changes first"). Prefer vertical
 Retrieve the full issue body, labels, and comments:
 
 ```powershell
-gh issue view <number> --repo SchneiderDaniel/flask_blogs --json title,body,comments,labels
+gh issue view <number> --repo SchneiderDaniel/copilot_framework --json title,body,comments,labels
 ```
 
 Read the entire output carefully before proceeding.
@@ -93,7 +93,7 @@ For clear-cut epics (≤8 sub-issues), proceed directly to creation.
 
 ```powershell
 gh issue create `
-  --repo SchneiderDaniel/flask_blogs `
+  --repo SchneiderDaniel/copilot_framework `
   --title "<descriptive title>" `
   --body "<body>" `
   --label "<layer-label>"
@@ -107,10 +107,10 @@ First, resolve the node IDs:
 
 ```powershell
 # Get epic node ID
-$epicId = (gh api graphql -f query="{ repository(owner: `"SchneiderDaniel`", name: `"flask_blogs`") { issue(number: <EPIC_NUMBER>) { id } } }" | ConvertFrom-Json).data.repository.issue.id
+$epicId = (gh api graphql -f query="{ repository(owner: `"SchneiderDaniel`", name: `"copilot_framework`") { issue(number: <EPIC_NUMBER>) { id } } }" | ConvertFrom-Json).data.repository.issue.id
 
 # Get child node ID (use backtick-escaped quotes inside the double-quoted string)
-$childId = (gh api graphql -f query="{ repository(owner: `"SchneiderDaniel`", name: `"flask_blogs`") { issue(number: <CHILD_NUMBER>) { id } } }" | ConvertFrom-Json).data.repository.issue.id
+$childId = (gh api graphql -f query="{ repository(owner: `"SchneiderDaniel`", name: `"copilot_framework`") { issue(number: <CHILD_NUMBER>) { id } } }" | ConvertFrom-Json).data.repository.issue.id
 ```
 
 Then add the sub-issue relationship:
@@ -163,9 +163,9 @@ _Optional: list any sub-issues that must be completed before this one._
 ## 🛑 Safety & Constraints
 
 - **Never close the original epic** — only the human reviewer may close issues.
-- **No more than 12 sub-issues per epic** — if the epic is larger, flag it and ask the user to narrow the scope first.
+- **No artificial cap on sub-issues** — use as many sub-issues as needed to produce well-defined, independently implementable coding tasks. The primary goal is manageability, not brevity. If the epic requires 15–20 slices for clarity, create them all.
 - **Each sub-issue must have at least 2 Acceptance Criteria** — if you cannot define them, the slice is too vague; merge it with an adjacent issue.
-- **Labels**: only use labels that already exist in the repository. Check with `gh label list --repo SchneiderDaniel/flask_blogs` if unsure.
+- **Labels**: only use labels that already exist in the repository. Check with `gh label list --repo SchneiderDaniel/copilot_framework` if unsure.
 - **Volume control**: fetch the original issue once; do not re-fetch in a loop.
 
 ---
