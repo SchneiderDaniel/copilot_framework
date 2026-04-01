@@ -10,8 +10,8 @@ def load_config():
     
     # Default values
     default_config = {
-        "repo": "SchneiderDaniel/flask_blogs",
-        "myosotis_project": "flask_blogs",
+        "repo": "SchneiderDaniel/copilot_framework",
+        "myosotis_project": "copilot_framework",
         "github_project_number": 2
     }
     

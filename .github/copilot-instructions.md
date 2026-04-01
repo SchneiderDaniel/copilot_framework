@@ -11,9 +11,11 @@ This repository is an agentic automation framework designed to orchestrate speci
     - **Hippocooking**: JSON-driven NoSQL recipe application.
     - **Planhead**: Strategic calculator suite using a strict Service-Layer pattern.
     - **Sudoku**: User-facing Sudoku puzzle game using a strict Service-Layer pattern.
+3.  **`lorest/`**: A hosted mono-repo project that the framework's agents are currently configured to manage.
+
 
 ## ⚙️ Operational Protocols (The Commissioner)
-The Main Agent (Copilot CLI) acts as the **Commissioner** (Orchestrator). It manages the high-level project status and delegates complex tasks to specialized detectives through the **Mission Control Protocol**. Tasks are located as issue in `https://github.com/SchneiderDaniel/flask_blogs/issues/*`.
+The Main Agent (Copilot CLI) acts as the **Commissioner** (Orchestrator). It manages the high-level project status and delegates complex tasks to specialized detectives through the **Mission Control Protocol**. Tasks are located as issue in `https://github.com/SchneiderDaniel/copilot_framework/issues/*`.
 
 **🛑 MANDATORY ORCHESTRATION PROTOCOL**:
 1.  **Identify GitHub Issue**: If a user mentions a GitHub issue (e.g., `#123`), the Main Agent MUST call **Mission Control**.

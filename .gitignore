@@ -1,5 +1,6 @@
 # Ignore all pycache folders anywhere in the project
 **/__pycache__/
+**/.pytest_cache/
 
 # Also ignore individual compiled files just in case
 *.py[cod]
