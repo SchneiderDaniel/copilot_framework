@@ -45,7 +45,7 @@ Never ask "Should I invoke the next agent?" — just do it.
 **🛑 ISSUE CLOSING FORBIDDEN**: No agent — including the Commissioner — may ever run `gh issue close`. Only the human reviewer closes GitHub issues. Agents may only advance the project board status.
 
 ## 🌍 Agent Environment & Paths
-- **Current Project Target**: `flask_blogs` (subdirectory).
+- **Active Projects**: `flask_blogs/` (Flask web apps) and `lorest/` (desktop knowledge base — early stage).
 - **Tooling Root**: All tools and scripts are called relative to the framework root.
 - **Skill Paths**: Reusable skills are located in `.github/skills/`.
 
@@ -143,3 +143,21 @@ The development lifecycle is tailored to task complexity. Standard tasks follow 
 - **New Page (Planhead)?** Register a Blueprint in `flask_planhead/app/__init__.py`.
 - **New Sudoku Logic?** Add a service to `flask_sudoku/homepage/services/`.
 - **New Sudoku Page?** Register a Blueprint in `flask_sudoku/run.py`.
+
+# 🌲 Project: Lorest (Early Stage)
+
+## 🏗️ Concept Overview
+Lorest ("Local Forest") is a standalone desktop application for AI-empowered personal knowledge management. It is designed for **privacy-first, fully local** operation — no cloud telemetry, all AI inference runs on-device.
+
+> ⚠️ **This project is in the concept/planning phase. No implementation exists yet. Architecture and tooling decisions have not been finalized.**
+
+### 🗺️ Planned Approach (Subject to Change)
+- **Frontend**: Native desktop window (Tauri + React/Vue).
+- **Backend**: Locally bundled FastAPI (Python) server for business logic and agent orchestration.
+- **AI Inference**: Local models via Ollama or llama.cpp (GGUF format).
+- **Persistence**: Local SQLite (raw source archive) + local graph/vector store (e.g., Graphiti + LanceDB).
+
+### 🧭 Navigation for Agents
+- **Lorest Issues**: Track in `https://github.com/SchneiderDaniel/copilot_framework/issues/*`
+- **Lorest Code**: Located in `lorest/` submodule.
+- **Architecture decisions, tech stack, and agent patterns will be established during the Analyst/Architect phases.**
