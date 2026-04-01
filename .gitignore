@@ -5,3 +5,6 @@
 # Also ignore individual compiled files just in case
 *.py[cod]
 *$py.class
+**/.venv/
+
+__pycache__/
