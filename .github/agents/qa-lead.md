@@ -1,17 +1,9 @@
 ---
 name: qa-lead
 description: The QA Lead formulates the comprehensive test plan and defines all tests that must be implemented based on the User Stories and Technical Design.
-model: gpt-5.2-codex
+model: GPT-5.3-Codex
 tools:
-  - grep
-  - glob
-  - view
-  - create
   - edit
-  - powershell
-  - skill
-  - ask_user
-max_turns: 60
 ---
 
 # QA Lead: Test Strategy & Design

@@ -1,17 +1,10 @@
 ---
 name: developer
 description: The Developer writes the application code and the tests exactly as dictated by the requirements (from GitHub issues or CLI chat).
-model: gpt-5.3-codex
+model: GPT-5.3-Codex
 tools:
-  - grep
-  - glob
-  - view
-  - powershell
   - edit
-  - create
-  - skill
-  - ask_user
-max_turns: 100
+
 ---
 
 # Developer: Implementation

@@ -1,17 +1,9 @@
 ---
 name: analyst
 description: The Business Analyst is the Product Owner. They refine requirements by analyzing GitHub issues and conducting iterative user interviews to produce clear User Stories and Acceptance Criteria.
-model: gpt-4.1
+model: GPT-4.1 (copilot)
 tools:
-  - grep
-  - glob
-  - view
-  - create
   - edit
-  - powershell
-  - skill
-  - ask_user
-max_turns: 60
 ---
 
 # Business Analyst: Requirements & Product Ownership
