@@ -1,10 +1,20 @@
 ---
 name: auditor
 description: The Code Auditor verifies if the implemented code matches the QA Lead's tests, the Architect's Technical Design, and the Analyst's User Stories.
-model: Claude Sonnet 4.6 
+model: Claude Sonnet 4.6
 tools:
-  - edit
-
+  - read/readFile
+  - read/terminalLastCommand
+  - read/problems
+  - search/codebase
+  - search/fileSearch
+  - search/textSearch
+  - search/listDirectory
+  - search/usages
+  - search/changes
+  - execute/runInTerminal
+  - execute/getTerminalOutput
+  - execute/testFailure
 ---
 
 # Code Auditor: QA & Verification

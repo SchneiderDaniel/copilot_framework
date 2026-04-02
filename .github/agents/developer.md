@@ -3,8 +3,24 @@ name: developer
 description: The Developer writes the application code and the tests exactly as dictated by the requirements (from GitHub issues or CLI chat).
 model: GPT-5.3-Codex
 tools:
-  - edit
-
+  - read/readFile
+  - read/terminalLastCommand
+  - read/terminalSelection
+  - read/problems
+  - search/codebase
+  - search/fileSearch
+  - search/textSearch
+  - search/listDirectory
+  - search/usages
+  - search/changes
+  - edit/editFiles
+  - edit/createFile
+  - edit/createDirectory
+  - execute/runInTerminal
+  - execute/getTerminalOutput
+  - execute/testFailure
+  - web/fetch
+  - web/search
 ---
 
 # Developer: Implementation

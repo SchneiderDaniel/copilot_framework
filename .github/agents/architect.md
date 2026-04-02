@@ -3,7 +3,16 @@ name: architect
 description: The Solutions Architect maps dependencies, drafts Technical Designs, and performs Security and SEO audits.
 model: GPT-5.3-Codex
 tools:
-  - edit
+  - read/readFile
+  - search/codebase
+  - search/fileSearch
+  - search/textSearch
+  - search/listDirectory
+  - search/usages
+  - search/changes
+  - web/fetch
+  - web/search
+  - execute/runInTerminal
 ---
 
 # Solutions Architect: Technical Design & Governance
