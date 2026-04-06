@@ -3,7 +3,7 @@
 An agentic automation framework that orchestrates specialized AI agents to manage software projects. It currently tracks two sub-projects as Git submodules:
 
 - **`flask_blogs/`** — A hosted Python/Flask mono-repo (Hippocooking, Planhead, Sudoku). Actively maintained.
-- **`lorest/`** — "Local Forest": a privacy-first, fully local desktop application for AI-empowered personal knowledge management. **Early concept stage** — no implementation yet. Planned stack: Tauri + React frontend, FastAPI backend, local LLM inference (Ollama/llama.cpp), SQLite + graph/vector store (Graphiti + LanceDB).
+- **`forestrag/`** — ForestRAG, a FastAPI + frontend application for ingesting local files into append-only SQLite and visualizing the ingested dataset (tables/tree-style views).
 
 All GitHub Issues for both projects are tracked in this repository: `https://github.com/SchneiderDaniel/copilot_framework/issues`
 
