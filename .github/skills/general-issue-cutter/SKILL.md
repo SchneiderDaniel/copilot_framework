@@ -37,7 +37,23 @@ gh issue view <number> --repo SchneiderDaniel/copilot_framework --json title,bod
 
 Read the entire output carefully before proceeding.
 
-### Step 2 — Analyze & Categorize
+### Step 2 — Explore the Codebase First
+
+⚠️ **MANDATORY before analyzing any epic**: explore the relevant codebase area to understand what already exists. Cutting issues without knowing the current state leads to incorrect sub-issues (e.g., creating a task to "add entity tables" when they already exist).
+
+For each project area touched by the epic:
+
+```powershell
+# List top-level structure of the relevant project
+Get-ChildItem -Recurse -Depth 2 <project_dir>
+
+# Read key existing files that the epic will extend or depend on
+# e.g., db schemas, config models, service modules, existing tests
+```
+
+Record what **already exists** vs. what is **genuinely missing**. Sub-issues must only describe work that is not yet done. If a feature is partially implemented, the sub-issue must acknowledge the existing code and describe only the delta.
+
+### Step 3 — Analyze & Categorize
 
 Mentally map the epic across these dimensions:
 
@@ -53,7 +69,7 @@ Mentally map the epic across these dimensions:
 
 Not every epic touches all layers. Only create sub-issues for layers that are actually needed.
 
-### Step 3 — Derive Ordered Sub-Issues
+### Step 4 — Derive Ordered Sub-Issues
 
 Apply these ordering rules:
 
@@ -69,7 +85,7 @@ For each issue, define:
 - **Body**: written as a User Story with Acceptance Criteria (see template below)
 - **Layer label** (optional: `database`, `backend`, `frontend`, `infra`, `i18n`, `testing`)
 
-### Step 4 — Confirm with the User (if uncertain)
+### Step 5 — Confirm with the User (if uncertain)
 
 If the epic is ambiguous or very large (>8 sub-issues), present the proposed decomposition as a numbered list and ask the user to confirm before creating issues:
 
@@ -87,9 +103,9 @@ Shall I create these as GitHub issues?
 
 For clear-cut epics (≤8 sub-issues), proceed directly to creation.
 
-### Step 5 — Create Sub-Issues on GitHub
+### Step 6 — Create Sub-Issues on GitHub
 
-**5a — Create each issue** in order using:
+**6a — Create each issue** in order using:
 
 ```powershell
 gh issue create `
@@ -101,7 +117,7 @@ gh issue create `
 
 Capture the number returned for each newly created issue.
 
-**5b — Link each new issue as a sub-issue of the epic** using the GitHub GraphQL API.
+**6b — Link each new issue as a sub-issue of the epic** using the GitHub GraphQL API.
 
 First, resolve the node IDs:
 
@@ -119,7 +135,7 @@ Then add the sub-issue relationship:
 gh api graphql -f query="mutation { addSubIssue(input: { issueId: `"$epicId`", subIssueId: `"$childId`" }) { issue { number } subIssue { number } } }"
 ```
 
-Repeat 5b for every sub-issue created. Titles must stand alone — a developer reading the issue list should understand what needs to be done without any numeric prefix or parent reference. The implementation order is conveyed exclusively through the issue body.
+Repeat 6b for every sub-issue created. Titles must stand alone — a developer reading the issue list should understand what needs to be done without any numeric prefix or parent reference. The implementation order is conveyed exclusively through the issue body.
 
 After creating and linking all sub-issues, print a summary table:
 
@@ -173,6 +189,7 @@ _Optional: list any sub-issues that must be completed before this one._
 ## 💡 Quality Checklist (run mentally before creating)
 
 Before creating any sub-issue, verify:
+- [ ] The work it describes is **not already implemented** in the codebase (verified in Step 2)
 - [ ] It describes **one** coherent unit of work
 - [ ] It has at least **2** concrete, testable acceptance criteria
 - [ ] A developer could start on it **today** without waiting for unclear decisions
