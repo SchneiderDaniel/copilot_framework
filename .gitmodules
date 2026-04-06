@@ -1,7 +1,6 @@
 [submodule "flask_blogs"]
 	path = flask_blogs
 	url = https://github.com/SchneiderDaniel/flask_blogs
-[submodule "lorest"]
-	path = lorest
-	url = https://github.com/SchneiderDaniel/lorest.git
-
+[submodule "forestrag"]
+	path = forestrag
+	url = https://github.com/SchneiderDaniel/ForestRAG
