@@ -11,7 +11,7 @@ This repository is an agentic automation framework designed to orchestrate speci
     - **Hippocooking**: JSON-driven NoSQL recipe application.
     - **Planhead**: Strategic calculator suite using a strict Service-Layer pattern.
     - **Sudoku**: User-facing Sudoku puzzle game using a strict Service-Layer pattern.
-3.  **`lorest/`**: A hosted mono-repo project that the framework's agents are currently configured to manage.
+3.  **`forestrag/`**: A RAG (Retrieval-Augmented Generation) project that the framework's agents are currently configured to manage.
 
 
 ## ⚙️ Operational Protocols (The Commissioner)
@@ -50,7 +50,7 @@ After each agent completes, the Commissioner **MUST immediately invoke the next 
 **🛑 COMMITTING FORBIDDEN**: No agent — including the Commissioner — may ever run `git commit`, `git push`, or any equivalent command. Only the human user commits and pushes code. Agents write files; the human decides what goes into version control.
 
 ## 🌍 Agent Environment & Paths
-- **Active Projects**: `flask_blogs/` (Flask web apps) and `lorest/` (desktop knowledge base — early stage).
+- **Active Projects**: `flask_blogs/` (Flask web apps) and `forestrag/` (RAG project — early stage).
 - **Tooling Root**: All tools and scripts are called relative to the framework root.
 - **Skill Paths**: Reusable skills are located in `.github/skills/`.
 
@@ -149,20 +149,14 @@ The development lifecycle is tailored to task complexity. Standard tasks follow 
 - **New Sudoku Logic?** Add a service to `flask_sudoku/homepage/services/`.
 - **New Sudoku Page?** Register a Blueprint in `flask_sudoku/run.py`.
 
-# 🌲 Project: Lorest (Early Stage)
+# 🌲 Project: ForestRAG (Early Stage)
 
 ## 🏗️ Concept Overview
-Lorest ("Local Forest") is a standalone desktop application for AI-empowered personal knowledge management. It is designed for **privacy-first, fully local** operation — no cloud telemetry, all AI inference runs on-device.
+ForestRAG is a Retrieval-Augmented Generation (RAG) project. It is currently in an early stage — architecture and tooling decisions have not yet been finalized.
 
 > ⚠️ **This project is in the concept/planning phase. No implementation exists yet. Architecture and tooling decisions have not been finalized.**
 
-### 🗺️ Planned Approach (Subject to Change)
-- **Frontend**: Native desktop window (Tauri + React/Vue).
-- **Backend**: Locally bundled FastAPI (Python) server for business logic and agent orchestration.
-- **AI Inference**: Local models via Ollama or llama.cpp (GGUF format).
-- **Persistence**: Local SQLite (raw source archive) + local graph/vector store (e.g., Graphiti + LanceDB).
-
 ### 🧭 Navigation for Agents
-- **Lorest Issues**: Track in `https://github.com/SchneiderDaniel/copilot_framework/issues/*`
-- **Lorest Code**: Located in `lorest/` submodule.
+- **ForestRAG Issues**: Track in `https://github.com/SchneiderDaniel/copilot_framework/issues/*`
+- **ForestRAG Code**: Located in `forestrag/` submodule.
 - **Architecture decisions, tech stack, and agent patterns will be established during the Analyst/Architect phases.**
