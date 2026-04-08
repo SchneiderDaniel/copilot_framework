@@ -10,6 +10,9 @@ tools:
   - search/listDirectory
   - web/fetch
   - web/search
+  - edit/editFiles
+  - edit/createFile
+  - edit/createDirectory
   - execute/runInTerminal
 ---
 

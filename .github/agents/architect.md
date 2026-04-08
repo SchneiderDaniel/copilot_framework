@@ -12,6 +12,9 @@ tools:
   - search/changes
   - web/fetch
   - web/search
+  - edit/editFiles
+  - edit/createFile
+  - edit/createDirectory
   - execute/runInTerminal
 ---
 

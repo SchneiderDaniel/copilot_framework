@@ -15,6 +15,9 @@ tools:
   - execute/runInTerminal
   - execute/getTerminalOutput
   - execute/testFailure
+  - edit/editFiles
+  - edit/createFile
+  - edit/createDirectory
 ---
 
 # Code Auditor: QA & Verification

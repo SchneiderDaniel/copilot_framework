@@ -9,6 +9,9 @@ tools:
   - search/textSearch
   - search/listDirectory
   - search/usages
+  - edit/editFiles
+  - edit/createFile
+  - edit/createDirectory
   - execute/runInTerminal
 ---
 
