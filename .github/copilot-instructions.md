@@ -160,3 +160,7 @@ ForestRAG is a Retrieval-Augmented Generation (RAG) project. It is currently in 
 - **ForestRAG Issues**: Track in `https://github.com/SchneiderDaniel/copilot_framework/issues/*`
 - **ForestRAG Code**: Located in `forestrag/` submodule.
 - **Architecture decisions, tech stack, and agent patterns will be established during the Analyst/Architect phases.**
+
+## CLI
+If you need to search the web, use the `firecrawl` skill and its CLI.
+If you need to test a web app, use your `playpwright-cli` skill and its CLI.
