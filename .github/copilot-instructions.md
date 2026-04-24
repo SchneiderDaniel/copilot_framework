@@ -65,7 +65,7 @@ After each agent completes, the Commissioner **MUST immediately invoke the next 
 ## ⚙️ Operational Protocol (Main Agent)
 The Main Agent's primary role is **Orchestration** and **Surgical Fixes**. 
 
-- **Orchestration**: For any task linked to a GitHub issue, call `mission_control.py` and invoke the recommended sub-agent directly via the `task` tool (e.g. `agent_type: "sherlock"`).
+- **Orchestration**: For any task linked to a GitHub issue, call `mission_control.py` and invoke the recommended sub-agent directly via the `task` tool (e.g. `agent_type: "analyst"`).
 - **Surgical Fixes**: If a task is independent of the agentic workflow (no GitHub issue), follow the **Research -> Strategy -> Execution** lifecycle.
 - **No Shadow Implementation**: Never implement logic for an active GitHub issue outside the sub-agent workflow.
 
@@ -110,19 +110,12 @@ This mono-repo orchestrates three distinct Python applications under a single do
    - **Architecture**: **Strict Service-Layer Pattern**.
    - **Logic**: Thin Blueprints (`homepage/main/`) delegate puzzle generation and solving to the Service Layer (`homepage/services/`).
    - **Entry Point**: `flask_sudoku/run.py`, port `5003`.
-5. **Myosotis (Sub-App 4 - The Memory)**:
-   - **Architecture**: **Agentic Memory Service (CLI + FastAPI)**.
-   - **Logic**: Provides semantic search and a Knowledge Graph for memory persistence.
-   - **Entry Points**: `myosotis/myosotis/cli/main.py` (CLI) and `myosotis/myosotis/api/app.py` (FastAPI).
-   - **Persistence**: High-performance Vector Index and SQLite store in `myosotis_volume/`.
-
 ## 🛠️ Technology Stack & Data Storage
 - **Runtime**: Python 3.11+, Flask, FastAPI, Dash (Planhead simulations).
-- **Communication**: uWSGI (Binary protocol) for Flask apps; REST/FastAPI for Myosotis.
+- **Communication**: uWSGI (Binary protocol) for Flask apps.
 - **Persistence** (NEVER delete `*_volume/`):
   - `flask_hippocooking_volume/recipes`: JSON recipes and images.
   - `flask_planhead_volume/data`: Analytics SQLite DB and simulations.
-  - `myosotis_volume/index`: Vector storage and Knowledge Graph.
 
 ## 🌍 Localization (i18n) Mandate
 - **Hippocooking**: Dual-track. UI strings via Babel `_()`; Recipe content via dynamic JSON loader (`utils.py`).

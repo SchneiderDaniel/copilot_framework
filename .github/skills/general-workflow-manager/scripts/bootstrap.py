@@ -17,7 +17,14 @@ CONFIG = load_config()
 
 def run_command(command):
     try:
-        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=True,
+            encoding="utf-8",
+            errors="replace",
+        )
         return result.stdout.strip() or True
     except subprocess.CalledProcessError as e:
         print(f"Error: {e.stderr}")

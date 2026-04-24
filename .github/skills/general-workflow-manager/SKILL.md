@@ -1,16 +1,15 @@
 ---
 name: general-general-workflow-manager
-description: Expert procedural guidance for deterministic agent orchestration using GitHub Project statuses as gates and Myosotis as persistent memory.
+description: Expert procedural guidance for deterministic agent orchestration using GitHub Project statuses as gates.
 ---
 
 # Skill: Workflow Manager
 
-Expert procedural guidance for deterministic agent orchestration using GitHub Project statuses as gates and Myosotis as persistent memory. This skill ensures that agents only run when authorized, fetch context correctly, and advance the project state with atomic synchronization.
+Expert procedural guidance for deterministic agent orchestration using GitHub Project statuses as gates. This skill ensures that agents only run when authorized, fetch context correctly, and advance the project state reliably.
 
 ## 🛠️ Prerequisites
 - **GitHub CLI (`gh`)**: Must be installed and authenticated.
-- **Myosotis CLI**: Must be accessible via the project's Python environment.
-- **Project Context**: Issues must be assigned to the `flask_blogs` GitHub Project.
+- **Project Context**: Issues must be assigned to the configured GitHub Project.
 
 ## 🧠 Workflow Gates & Transitions
 
@@ -37,19 +36,19 @@ Agents MUST call this protocol as their **FIRST** action to verify authorization
 - **Behavior**: Verifies the issue status against the persona's "Gate". If successful, it prints the full issue body and comments.
 
 ### 3. The Finalization Protocol
-Agents MUST call this protocol as their **LAST** action to synchronize results to GitHub and Myosotis and advance the project status.
+Agents MUST call this protocol as their **LAST** action to synchronize results to GitHub and advance the project status.
 - **Tool**: `python .github/skills/general-workflow-manager/scripts/finalize.py <issue_number> <outcome> [options]`
 - **Options**:
   - `--comment-file <path>`: Path to a file containing the summary to post on GitHub.
-  - `--memory-file <path>`: Path to a file containing the content to store in Myosotis.
-  - `--memory-role <role>`: The agent's role (e.g., `product_owner`, `architect`, `developer`).
-  - `--memory-namespace <ns>`: The memory namespace (e.g., `requirements`, `technical_design`).
-- **Behavior**: Posts the comment, adds the memory, and updates the project status. Returns success only if ALL steps succeed.
+  - `--memory-file <path>` *(optional)*: Path to a file containing memory text for optional Myosotis sync if available.
+  - `--memory-role <role>` *(optional)*: The agent's role (e.g., `product_owner`, `architect`, `developer`).
+  - `--memory-namespace <ns>` *(optional)*: The memory namespace (e.g., `requirements`, `technical_design`).
+- **Behavior**: Posts the comment and updates the project status. Optional memory sync can be enabled when Myosotis is available.
 
 ## 🛑 Rules of Engagement
 - **No Manual Transitions**: Never use `gh project item-edit` manually. Always use the Finalization Protocol.
 - **No Manual Context Fetching**: Always use the Bootstrap Protocol to ensure you are working on the correct state.
-- **Atomic Sync**: Always include both the `--comment-file` and `--memory-file` in the finalization call to ensure GitHub and Myosotis are in sync.
+- **Comment Required**: Always include `--comment-file` in finalization calls.
 - **Agent Invocation**: When Mission Control recommends an agent, the Commissioner invokes it directly via the `task` tool (e.g., `agent_type: "analyst"`).
 
 "Order is the foundation of progress."

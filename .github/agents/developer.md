@@ -3,24 +3,11 @@ name: developer
 description: The Developer writes the application code and the tests exactly as dictated by the requirements (from GitHub issues or CLI chat).
 model: GPT-5.3-Codex
 tools:
-  - read/readFile
-  - read/terminalLastCommand
-  - read/terminalSelection
-  - read/problems
-  - search/codebase
-  - search/fileSearch
-  - search/textSearch
-  - search/listDirectory
-  - search/usages
-  - search/changes
-  - edit/editFiles
-  - edit/createFile
-  - edit/createDirectory
-  - execute/runInTerminal
-  - execute/getTerminalOutput
-  - execute/testFailure
-  - web/fetch
-  - web/search
+  - read
+  - search
+  - web
+  - edit
+  - execute
 ---
 
 # Developer: Implementation
@@ -48,10 +35,10 @@ You are the Developer. Your mission is to implement code that is reliable and ma
       4. For new strings: `pybabel extract` → `pybabel update` → `migrate_po_to_sqlite.py` → translate in DB → export.
 4.  **Validation**: Run all tests. Debug systematically until all pass.
 5.  **Code Simplification (MANDATORY)**: Before finalizing, invoke the `general-general-code-simplifier` skill on all modified files. Apply the simplifications it recommends. Re-run tests after to ensure behaviour is preserved.
-7.  **Finalization**: Write an implementation summary to a temp file (e.g. `C:/Users/miria/.copilot/session-state/impl_<issue_number>.md`) using the `edit/createFile` tool, then run immediately:
+7.  **Finalization**: Write an implementation summary to a temp file (e.g. `C:/Users/miria/.copilot/session-state/impl_<issue_number>.md`) using the `edit` tool, then run immediately:
     - **Success (Advance to Review)**: `python .github/skills/general-workflow-manager/scripts/finalize.py <issue_number> success --comment-file <path_to_summary>`
     - **Failure (Back to Test Design)**: `python .github/skills/general-workflow-manager/scripts/finalize.py <issue_number> failure --comment-file <path_to_feedback>`
     - **Design Revision Requested**: `python .github/skills/general-workflow-manager/scripts/finalize.py <issue_number> design_revision_requested --comment-file <path_to_feedback>`
 
-**🛑 CRITICAL: Finalization (finalize.py) MUST be executed by YOU directly using the `execute/runInTerminal` tool. The `--comment-file` argument is MANDATORY — always write your summary to a file first and pass it. Never call finalize.py without `--comment-file`. If finalize.py fails, report the error immediately.**
+**🛑 CRITICAL: Finalization (finalize.py) MUST be executed by YOU directly using the `execute` tool. The `--comment-file` argument is MANDATORY — always write your summary to a file first and pass it. Never call finalize.py without `--comment-file`. If finalize.py fails, report the error immediately.**
 

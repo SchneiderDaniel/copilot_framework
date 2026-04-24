@@ -15,14 +15,14 @@ Execute the provided Python script to gather all tests and run them sequentially
 ```bash
 cd flask_blogs/flask_planhead
 $env:PYTHONPATH="."
-python ../../../.gemini/skills/general-sequential-pytest-runner/scripts/run_sequential_tests.py .
+python ../../.github/skills/general-sequential-pytest-runner/scripts/run_sequential_tests.py .
 ```
 
 ### For Hippocooking
 ```bash
 cd flask_blogs/flask_hippocooking
 $env:PYTHONPATH="."
-python ../../../.gemini/skills/general-sequential-pytest-runner/scripts/run_sequential_tests.py .
+python ../../.github/skills/general-sequential-pytest-runner/scripts/run_sequential_tests.py .
 ```
 
 The script automatically:

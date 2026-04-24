@@ -22,6 +22,23 @@ def run_command(command):
     except subprocess.CalledProcessError as e:
         return None
 
+
+def _normalize_projects(projects_payload):
+    if isinstance(projects_payload, dict):
+        return projects_payload.get("projects", [])
+    if isinstance(projects_payload, list):
+        return projects_payload
+    return []
+
+
+def _normalize_items(items_payload):
+    if isinstance(items_payload, dict):
+        return items_payload.get("items", [])
+    if isinstance(items_payload, list):
+        return items_payload
+    return []
+
+
 def get_mission_status(issue_number, repo=CONFIG["repo"]):
     """
     Checks the current status of an issue and identifies the authorized agent.
@@ -45,14 +62,14 @@ def get_mission_status(issue_number, repo=CONFIG["repo"]):
         # Try to find projects owned by the user/org that contain this issue
         user_projects = run_command(["gh", "project", "list", "--owner", repo.split('/')[0], "--format", "json"])
         if user_projects:
-            projects = json.loads(user_projects)
+            projects = _normalize_projects(json.loads(user_projects))
             for p in projects:
                 p_number = p.get("number")
                 p_owner = repo.split('/')[0]
                 # Check if this issue is in this project
                 items = run_command(["gh", "project", "item-list", str(p_number), "--owner", p_owner, "--format", "json", "--limit", "100"])
                 if items:
-                    item_data = json.loads(items)
+                    item_data = _normalize_items(json.loads(items))
                     # For ProjectV2, items can be issues or PRs. Look for a match.
                     match = next((i for i in item_data if i.get("content", {}).get("number") == issue_number), None)
                     if match:

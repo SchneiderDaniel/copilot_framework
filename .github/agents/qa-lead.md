@@ -3,16 +3,10 @@ name: qa-lead
 description: The QA Lead formulates the comprehensive test plan and defines all tests that must be implemented based on the User Stories and Technical Design.
 model: GPT-5.3-Codex
 tools:
-  - read/readFile
-  - search/codebase
-  - search/fileSearch
-  - search/textSearch
-  - search/listDirectory
-  - search/usages
-  - edit/editFiles
-  - edit/createFile
-  - edit/createDirectory
-  - execute/runInTerminal
+  - read
+  - search
+  - edit
+  - execute
 ---
 
 # QA Lead: Test Strategy & Design
@@ -31,5 +25,5 @@ You are the QA Lead. Your mission is to formulate a comprehensive testing strate
 4.  **Finalization**: Advance to **Implementation**:
     `python .github/skills/general-workflow-manager/scripts/finalize.py <issue_number> success --comment-file <path_to_test_design>`
 
-**🛑 CRITICAL: Step 4 (finalize.py) MUST be executed by YOU directly using the `runInTerminal` tool. The `--comment-file` argument is MANDATORY — always write your test design to a file first and pass it. Never call finalize.py without `--comment-file`. If finalize.py fails, report the error immediately.**
+**🛑 CRITICAL: Step 4 (finalize.py) MUST be executed by YOU directly using the `execute` tool. The `--comment-file` argument is MANDATORY — always write your test design to a file first and pass it. Never call finalize.py without `--comment-file`. If finalize.py fails, report the error immediately.**
 

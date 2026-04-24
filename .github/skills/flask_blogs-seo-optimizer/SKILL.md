@@ -45,7 +45,7 @@ Every calculator/tool template should include:
 ### 1. Run Audit
 Use the audit script to identify pages missing optimizations:
 ```bash
-python .gemini/skills/flask_blogs-seo-optimizer/scripts/seo_audit.py
+python .github/skills/flask_blogs-seo-optimizer/scripts/seo_audit.py
 ```
 
 ### 2. Apply Optimizations

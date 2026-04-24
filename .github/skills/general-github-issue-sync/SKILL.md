@@ -45,7 +45,7 @@ gh issue view <number> --repo SchneiderDaniel/flask_blogs --json title,body,comm
 ### 5. Update Project Status
 To change the status of an issue in the GitHub project, use the provided helper script. This script handles the retrieval of internal IDs (Project ID, Item ID, Field ID, Option ID).
 ```powershell
-python .gemini/skills/general-github-issue-sync/scripts/update_issue_status.py <issue_number> "<target_status>"
+python .github/skills/general-github-issue-sync/scripts/update_issue_status.py <issue_number> "<target_status>"
 ```
 Example statuses: "Backlog", "Technical Design", "Test Design", "Implementation", "Review", "Done".
 
