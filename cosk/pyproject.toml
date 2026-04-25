@@ -10,6 +10,29 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "tree-sitter>=0.23,<0.25",
+  "tree-sitter-python",
+  "tree-sitter-javascript",
+  "tree-sitter-typescript",
+  "tree-sitter-java",
+  "tree-sitter-go",
+  "tree-sitter-rust",
+  "tree-sitter-c",
+  "tree-sitter-cpp",
+  "tree-sitter-ruby",
+  "tree-sitter-bash",
+  "tree-sitter-json",
+  "tree-sitter-yaml",
+  "tree-sitter-toml",
+  "tree-sitter-css",
+  "tree-sitter-html",
+  "tree-sitter-kotlin",
+  "tree-sitter-lua",
+  "tree-sitter-markdown",
+  "tree-sitter-php",
+  "tree-sitter-scala",
+  "tree-sitter-sql",
+  "tree-sitter-swift",
+  "tree-sitter-c-sharp",
   "lancedb>=0.8,<0.10; python_version < '3.14'",
   "lancedb>=0.25,<0.31; python_version >= '3.14'",
   "networkx>=3.2,<4.0",
@@ -26,7 +49,7 @@ packages = [
   "cosk.mcp",
   "cosk.safety",
 ]
-include-package-data = false
+include-package-data = true
 
 [tool.setuptools.package-dir]
 cosk = "."
@@ -35,6 +58,9 @@ cosk = "."
 "cosk.graph" = "graph"
 "cosk.mcp" = "mcp"
 "cosk.safety" = "safety"
+
+[tool.setuptools.package-data]
+"cosk.extraction" = ["queries/*.scm"]
 
 [tool.pytest.ini_options]
 markers = [
