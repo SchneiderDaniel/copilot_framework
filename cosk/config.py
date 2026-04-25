@@ -4,6 +4,11 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib import import_module
 from importlib.util import find_spec
+from pathlib import Path
+
+import yaml
+
+_SETTINGS_PATH = Path(__file__).parent / "config" / "cosk.settings.yaml"
 
 
 @dataclass
@@ -25,6 +30,7 @@ class LanguageSettings:
 @dataclass
 class ExtractionSettings:
     supported_languages: tuple[LanguageSettings, ...]
+    source_directory: str = "."
     exclude_dirs: tuple[str, ...] = ("__pycache__", ".git", "node_modules", ".venv")
     follow_symlinks: bool = False
     strict: bool = False
@@ -36,50 +42,41 @@ class CoskConfig:
     extraction: ExtractionSettings
 
 
-_DEFAULT_LANGUAGE_SPECS: tuple[tuple[str, tuple[str, ...], str], ...] = (
-    ("python", (".py",), "tree_sitter_python"),
-    ("javascript", (".js", ".mjs", ".cjs"), "tree_sitter_javascript"),
-    ("typescript", (".ts", ".tsx"), "tree_sitter_typescript"),
-    ("java", (".java",), "tree_sitter_java"),
-    ("go", (".go",), "tree_sitter_go"),
-    ("rust", (".rs",), "tree_sitter_rust"),
-    ("c", (".c", ".h"), "tree_sitter_c"),
-    ("cpp", (".cpp", ".cxx", ".cc", ".hpp"), "tree_sitter_cpp"),
-    ("ruby", (".rb",), "tree_sitter_ruby"),
-    ("bash", (".sh", ".bash"), "tree_sitter_bash"),
-    ("json", (".json",), "tree_sitter_json"),
-    ("yaml", (".yaml", ".yml"), "tree_sitter_yaml"),
-    ("toml", (".toml",), "tree_sitter_toml"),
-    ("css", (".css",), "tree_sitter_css"),
-    ("html", (".html", ".htm"), "tree_sitter_html"),
-    ("kotlin", (".kt", ".kts"), "tree_sitter_kotlin"),
-    ("lua", (".lua",), "tree_sitter_lua"),
-    ("markdown", (".md",), "tree_sitter_markdown"),
-    ("php", (".php",), "tree_sitter_php"),
-    ("scala", (".scala",), "tree_sitter_scala"),
-    ("sql", (".sql",), "tree_sitter_sql"),
-    ("swift", (".swift",), "tree_sitter_swift"),
-    ("c-sharp", (".cs",), "tree_sitter_c_sharp"),
-)
-
-
-def _build_default_languages() -> tuple[LanguageSettings, ...]:
-    return tuple(
+def _parse_config(data: dict) -> CoskConfig:
+    ext = data.get("extraction", {})
+    summarizer_data = ext.get("summarizer", {}) or {}
+    summarizer = SummarizerSettings(
+        callable_path=summarizer_data.get("callable_path"),
+        kwargs=summarizer_data.get("kwargs") or {},
+    )
+    languages = tuple(
         LanguageSettings(
-            name=name,
-            extensions=extensions,
-            grammar_package=grammar_package,
-            grammar_module="language",
-            query_file=f"{name}.scm",
-            enabled=find_spec(grammar_package) is not None,
+            name=lang["name"],
+            extensions=tuple(lang["extensions"]),
+            grammar_package=lang["grammar_package"],
+            grammar_module=lang.get("grammar_module", "language"),
+            query_file=lang["query_file"],
+            enabled=lang.get("enabled", True) and find_spec(lang["grammar_package"]) is not None,
         )
-        for name, extensions, grammar_package in _DEFAULT_LANGUAGE_SPECS
+        for lang in ext.get("supported_languages", [])
+    )
+    return CoskConfig(
+        extraction=ExtractionSettings(
+            supported_languages=languages,
+            source_directory=ext.get("source_directory", "."),
+            exclude_dirs=tuple(ext.get("exclude_dirs", ("__pycache__", ".git", "node_modules", ".venv"))),
+            follow_symlinks=ext.get("follow_symlinks", False),
+            strict=ext.get("strict", False),
+            summarizer=summarizer,
+        )
     )
 
 
 @lru_cache(maxsize=1)
 def get_cosk_config() -> CoskConfig:
-    return CoskConfig(extraction=ExtractionSettings(supported_languages=_build_default_languages()))
+    with _SETTINGS_PATH.open(encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    return _parse_config(data)
 
 
 def validate_cosk_config(config: CoskConfig) -> None:

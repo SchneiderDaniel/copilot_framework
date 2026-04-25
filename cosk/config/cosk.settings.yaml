@@ -1,0 +1,147 @@
+extraction:
+  source_directory: .
+  exclude_dirs: [__pycache__, .git, node_modules, .venv]
+  follow_symlinks: false
+  strict: false
+  summarizer:
+    callable_path: null
+    kwargs: {}
+  supported_languages:
+    - name: python
+      extensions: [.py]
+      grammar_package: tree_sitter_python
+      grammar_module: language
+      query_file: python.scm
+      enabled: true
+    - name: javascript
+      extensions: [.js, .mjs, .cjs]
+      grammar_package: tree_sitter_javascript
+      grammar_module: language
+      query_file: javascript.scm
+      enabled: true
+    - name: typescript
+      extensions: [.ts, .tsx]
+      grammar_package: tree_sitter_typescript
+      grammar_module: language_typescript
+      query_file: typescript.scm
+      enabled: true
+    - name: java
+      extensions: [.java]
+      grammar_package: tree_sitter_java
+      grammar_module: language
+      query_file: java.scm
+      enabled: true
+    - name: go
+      extensions: [.go]
+      grammar_package: tree_sitter_go
+      grammar_module: language
+      query_file: go.scm
+      enabled: true
+    - name: rust
+      extensions: [.rs]
+      grammar_package: tree_sitter_rust
+      grammar_module: language
+      query_file: rust.scm
+      enabled: true
+    - name: c
+      extensions: [.c, .h]
+      grammar_package: tree_sitter_c
+      grammar_module: language
+      query_file: c.scm
+      enabled: true
+    - name: cpp
+      extensions: [.cpp, .cxx, .cc, .hpp]
+      grammar_package: tree_sitter_cpp
+      grammar_module: language
+      query_file: cpp.scm
+      enabled: true
+    - name: ruby
+      extensions: [.rb]
+      grammar_package: tree_sitter_ruby
+      grammar_module: language
+      query_file: ruby.scm
+      enabled: true
+    - name: bash
+      extensions: [.sh, .bash]
+      grammar_package: tree_sitter_bash
+      grammar_module: language
+      query_file: bash.scm
+      enabled: true
+    - name: json
+      extensions: [.json]
+      grammar_package: tree_sitter_json
+      grammar_module: language
+      query_file: json.scm
+      enabled: true
+    - name: yaml
+      extensions: [.yaml, .yml]
+      grammar_package: tree_sitter_yaml
+      grammar_module: language
+      query_file: yaml.scm
+      enabled: true
+    - name: toml
+      extensions: [.toml]
+      grammar_package: tree_sitter_toml
+      grammar_module: language
+      query_file: toml.scm
+      enabled: true
+    - name: css
+      extensions: [.css]
+      grammar_package: tree_sitter_css
+      grammar_module: language
+      query_file: css.scm
+      enabled: true
+    - name: html
+      extensions: [.html, .htm]
+      grammar_package: tree_sitter_html
+      grammar_module: language
+      query_file: html.scm
+      enabled: true
+    - name: kotlin
+      extensions: [.kt, .kts]
+      grammar_package: tree_sitter_kotlin
+      grammar_module: language
+      query_file: kotlin.scm
+      enabled: true
+    - name: lua
+      extensions: [.lua]
+      grammar_package: tree_sitter_lua
+      grammar_module: language
+      query_file: lua.scm
+      enabled: true
+    - name: markdown
+      extensions: [.md]
+      grammar_package: tree_sitter_markdown
+      grammar_module: language
+      query_file: markdown.scm
+      enabled: true
+    - name: php
+      extensions: [.php]
+      grammar_package: tree_sitter_php
+      grammar_module: language
+      query_file: php.scm
+      enabled: true
+    - name: scala
+      extensions: [.scala]
+      grammar_package: tree_sitter_scala
+      grammar_module: language
+      query_file: scala.scm
+      enabled: true
+    - name: sql
+      extensions: [.sql]
+      grammar_package: tree_sitter_sql
+      grammar_module: language
+      query_file: sql.scm
+      enabled: true
+    - name: swift
+      extensions: [.swift]
+      grammar_package: tree_sitter_swift
+      grammar_module: language
+      query_file: swift.scm
+      enabled: true
+    - name: c-sharp
+      extensions: [.cs]
+      grammar_package: tree_sitter_c_sharp
+      grammar_module: language
+      query_file: c-sharp.scm
+      enabled: true

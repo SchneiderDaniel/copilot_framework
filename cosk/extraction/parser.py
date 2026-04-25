@@ -19,13 +19,13 @@ from cosk.extraction.summarizers import load_summarizer
 
 
 def extract_skeleton_nodes(
-    directory: str | Path,
+    directory: str | Path | None = None,
     *,
     summarize: bool = False,
     config: CoskConfig | None = None,
 ) -> list[SkeletonNode]:
     resolved_config = config or get_cosk_config()
-    root = Path(directory)
+    root = Path(directory) if directory is not None else Path(resolved_config.extraction.source_directory)
     results: list[SkeletonNode] = []
     for file_path in _iter_supported_files(root, resolved_config):
         results.extend(extract_file_skeleton_nodes(file_path, summarize=summarize, config=resolved_config))
