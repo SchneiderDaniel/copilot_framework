@@ -20,8 +20,9 @@ Each sub-issue produced by this skill must be a **vertical slice** — a self-co
 - Can be implemented and verified in isolation
 - Has at least one concrete acceptance criterion that a developer can write a test for
 - Does **not** depend on unfinished work from another sub-issue (unless that dependency is explicitly declared)
+- Includes **step-by-step human validation instructions** so a reviewer can confirm the slice works without reading code
 
-Avoid horizontal slices (e.g., "do all database changes first"). Prefer vertical slices that touch multiple layers if needed to produce a working, testable outcome.
+Avoid horizontal slices (e.g., "do all database changes first"). Prefer vertical slices that touch multiple layers if needed to produce a working, testable outcome. If a slice cannot be tested independently by a human, it is too thin or too abstract — merge it or redesign it.
 
 ---
 
@@ -167,6 +168,17 @@ As a [role], I want [feature], so that [benefit].
 - [ ] AC2: <specific, testable condition>
 - [ ] AC3: (add as many as needed)
 
+## How to Validate (Human Tester)
+_Step-by-step instructions for a human reviewer to verify this sub-issue is complete and working. Must be executable without reading any code._
+
+1. <setup step — e.g. "Start the app with `docker compose up`">
+2. <navigation step — e.g. "Open browser at `http://localhost/feature-page`">
+3. <action step — e.g. "Click X / submit form Y / call endpoint Z">
+4. <expected result — e.g. "Verify that … appears / returns … / database contains …">
+5. <edge case / negative test — e.g. "Submit with empty field → expect error message …">
+
+_Each AC above must map to at least one step here._
+
 ## Technical Notes
 _Optional: key files, services, or patterns to touch. Keep brief._
 
@@ -195,5 +207,6 @@ Before creating any sub-issue, verify:
 - [ ] A developer could start on it **today** without waiting for unclear decisions
 - [ ] It does not duplicate work in another sub-issue
 - [ ] The order number reflects a valid implementation sequence
+- [ ] The **How to Validate** section has step-by-step instructions a human can follow **without reading code** to confirm the slice is complete
 
 "A story too big to hold is a story waiting to be told in chapters."

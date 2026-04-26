@@ -12,6 +12,8 @@ __pycache__/
 **.playwright-cli/
 **.playwright
 
+.tmp_lancedb_probe
+
 .geminikey
 
 .firecrawl/
