@@ -34,6 +34,7 @@ import sys
 from typing import Any
 
 from cosk.extraction.parser import extract_skeleton_nodes
+from cosk.graph import state
 from cosk.indexing.embedding import GeminiEmbeddingProvider
 from cosk.indexing.vector_store import SkeletonNodeVectorStore
 
@@ -145,6 +146,72 @@ def create_mcp_server(vector_store: SkeletonNodeVectorStore) -> FastMCP:
         except Exception as exc:  # noqa: BLE001
             raise McpError(
                 mcp_types.ErrorData(code=mcp_types.INTERNAL_ERROR, message=f"cosk_semantic_search failed: {exc}")
+            ) from exc
+
+    @mcp.tool()
+    def cosk_get_neighbors(node_id: str) -> str:
+        if not node_id or not node_id.strip():
+            raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="node_id must not be blank"))
+        try:
+            graph = state.get_graph()
+            if graph is None:
+                raise McpError(
+                    mcp_types.ErrorData(
+                        code=mcp_types.INTERNAL_ERROR,
+                        message="cosk_get_neighbors failed: relationship graph is not loaded",
+                    )
+                )
+            return json.dumps(graph.get_neighbors(node_id.strip()))
+        except McpError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise McpError(
+                mcp_types.ErrorData(code=mcp_types.INTERNAL_ERROR, message=f"cosk_get_neighbors failed: {exc}")
+            ) from exc
+
+    @mcp.tool()
+    def cosk_expand_definition(file_path: str, start_line: int, end_line: int) -> str:
+        if not file_path or not file_path.strip():
+            raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="file_path must not be blank"))
+        if start_line < 1:
+            raise McpError(
+                mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="start_line must be >= 1")
+            )
+        if end_line < start_line:
+            raise McpError(
+                mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="end_line must be >= start_line")
+            )
+        try:
+            with open(file_path, "r", encoding="utf-8") as source_file:
+                lines = source_file.readlines()
+        except Exception as exc:  # noqa: BLE001
+            return f"Unable to read '{file_path}': {exc}"
+
+        if start_line > len(lines) or end_line > len(lines):
+            return f"Requested line range {start_line}-{end_line} is outside file bounds; file has {len(lines)} lines."
+        return "".join(lines[start_line - 1 : end_line])
+
+    @mcp.tool()
+    def cosk_find_usage(entity_name: str) -> str:
+        if not entity_name or not entity_name.strip():
+            raise McpError(
+                mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="entity_name must not be blank")
+            )
+        try:
+            graph = state.get_graph()
+            if graph is None:
+                raise McpError(
+                    mcp_types.ErrorData(
+                        code=mcp_types.INTERNAL_ERROR,
+                        message="cosk_find_usage failed: relationship graph is not loaded",
+                    )
+                )
+            return json.dumps(graph.find_usages(entity_name.strip()))
+        except McpError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise McpError(
+                mcp_types.ErrorData(code=mcp_types.INTERNAL_ERROR, message=f"cosk_find_usage failed: {exc}")
             ) from exc
 
     return mcp

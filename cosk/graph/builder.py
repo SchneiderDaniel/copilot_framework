@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import ast
 from collections import defaultdict
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import TypedDict
 
 import networkx as nx
@@ -20,6 +20,12 @@ class NeighborEntry(TypedDict):
 class NeighborMap(TypedDict):
     inbound: list[NeighborEntry]
     outbound: list[NeighborEntry]
+
+
+class UsageEntry(TypedDict):
+    file_path: str
+    line: int
+    context_node_id: str
 
 
 def compute_node_id(node: SkeletonNode) -> str:
@@ -117,6 +123,7 @@ def _add_edge_label(graph: nx.DiGraph, src_id: str, tgt_id: str, label: EdgeLabe
 @dataclass(slots=True)
 class RelationshipGraph:
     graph: nx.DiGraph
+    definitions_by_name: dict[str, list[str]] = field(default_factory=dict)
 
     def get_neighbors(self, node_id: str) -> NeighborMap:
         if node_id not in self.graph:
@@ -158,6 +165,39 @@ class RelationshipGraph:
             )
         raise CycleError(cycle_edges)
 
+    def find_usages(self, entity_name: str) -> list[UsageEntry]:
+        usage_entries: list[UsageEntry] = []
+        seen_node_ids: set[str] = set()
+
+        def add_usage_entry(node_id: str, attributes: Mapping[str, object]) -> None:
+            if node_id in seen_node_ids:
+                return
+            seen_node_ids.add(node_id)
+            usage_entries.append(
+                {
+                    "file_path": str(attributes.get("file_path", "")),
+                    "line": int(attributes.get("start_line", 0)),
+                    "context_node_id": node_id,
+                }
+            )
+
+        for node_id, attributes in self.graph.nodes(data=True):
+            raw_signature = attributes.get("raw_signature", "")
+            if not raw_signature:
+                continue
+
+            references = _extract_reference_names(raw_signature)
+            reference_names = references["calls"] | references["imports"]
+            if entity_name in reference_names:
+                add_usage_entry(node_id, attributes)
+
+        for target_node_id in self.definitions_by_name.get(entity_name, []):
+            for source_node_id in self.graph.predecessors(target_node_id):
+                add_usage_entry(source_node_id, self.graph.nodes[source_node_id])
+
+        usage_entries.sort(key=lambda entry: (entry["file_path"], entry["line"]))
+        return usage_entries
+
 
 def build_graph(nodes: Sequence[SkeletonNode]) -> RelationshipGraph:
     graph = nx.DiGraph()
@@ -165,7 +205,12 @@ def build_graph(nodes: Sequence[SkeletonNode]) -> RelationshipGraph:
 
     for node in nodes:
         node_id = compute_node_id(node)
-        graph.add_node(node_id)
+        graph.add_node(
+            node_id,
+            file_path=node.file_path,
+            start_line=node.start_line,
+            raw_signature=node.raw_signature,
+        )
 
         defined_name = _extract_defined_name(node.raw_signature) or node_id
         definitions_by_name[defined_name].append(node_id)
@@ -180,7 +225,7 @@ def build_graph(nodes: Sequence[SkeletonNode]) -> RelationshipGraph:
                         continue
                     _add_edge_label(graph, source_node_id, target_node_id, label)
 
-    relationship_graph = RelationshipGraph(graph)
+    relationship_graph = RelationshipGraph(graph=graph, definitions_by_name=dict(definitions_by_name))
     relationship_graph.detect_cycles()
     return relationship_graph
 

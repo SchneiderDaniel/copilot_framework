@@ -227,3 +227,72 @@ def test_state_get_set_clear_thread_safe_contract_smoke() -> None:
     assert state.get_graph() is graph
     state.clear_graph()
     assert state.get_graph() is None
+
+
+def test_find_usages_returns_empty_list_for_unknown_entity() -> None:
+    nodes = [make_node("def alpha():", "/repo/a.py", 1)]
+    graph = build_graph(nodes)
+    assert graph.find_usages("nonexistent") == []
+
+
+def test_find_usages_returns_caller_for_direct_call_site() -> None:
+    callee = make_node("def foo():", "/repo/callee.py", 1)
+    caller = make_node("def bar(x=foo()):", "/repo/caller.py", 5)
+    graph = build_graph([callee, caller])
+    results = graph.find_usages("foo")
+    assert len(results) == 1
+    assert results[0]["file_path"] == "/repo/caller.py"
+    assert results[0]["line"] == 5
+    assert results[0]["context_node_id"] == compute_node_id(caller)
+
+
+def test_find_usages_result_contains_required_keys() -> None:
+    callee = make_node("def foo():", "/repo/a.py", 1)
+    caller = make_node("def bar(x=foo()):", "/repo/b.py", 2)
+    graph = build_graph([callee, caller])
+    results = graph.find_usages("foo")
+    assert results
+    assert set(results[0]) == {"file_path", "line", "context_node_id"}
+
+
+def test_find_usages_deduplicates_direct_and_graph_based_results() -> None:
+    callee = make_node("def foo():", "/repo/a.py", 1)
+    caller = make_node("def bar(x=foo()):", "/repo/b.py", 2)
+    graph = build_graph([callee, caller])
+    results = graph.find_usages("foo")
+    node_ids = [entry["context_node_id"] for entry in results]
+    assert len(node_ids) == len(set(node_ids))
+
+
+def test_find_usages_returns_sorted_results() -> None:
+    foo_def = make_node("def foo():", "/repo/z.py", 1)
+    caller_a = make_node("def a(x=foo()):", "/repo/a.py", 1)
+    caller_b = make_node("def b(x=foo()):", "/repo/b.py", 1)
+    graph = build_graph([foo_def, caller_a, caller_b])
+    results = graph.find_usages("foo")
+    assert results == sorted(results, key=lambda entry: (entry["file_path"], entry["line"]))
+
+
+def test_find_usages_finds_import_as_usage() -> None:
+    foo_def = make_node("def foo():", "/repo/a.py", 1)
+    importer = make_node("import foo", "/repo/b.py", 3)
+    graph = build_graph([foo_def, importer])
+    results = graph.find_usages("foo")
+    assert any(entry["context_node_id"] == compute_node_id(importer) for entry in results)
+
+
+def test_find_usages_excludes_defining_node_itself() -> None:
+    foo_def = make_node("def foo():", "/repo/a.py", 1)
+    graph = build_graph([foo_def])
+    results = graph.find_usages("foo")
+    assert not any(entry["context_node_id"] == compute_node_id(foo_def) for entry in results)
+
+
+def test_build_graph_stores_node_attributes_for_find_usages() -> None:
+    node = make_node("def alpha():", "/repo/a.py", 7)
+    graph = build_graph([node])
+    node_id = compute_node_id(node)
+    attributes = graph.graph.nodes[node_id]
+    assert attributes["file_path"] == "/repo/a.py"
+    assert attributes["start_line"] == 7
+    assert "raw_signature" in attributes

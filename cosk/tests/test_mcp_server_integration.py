@@ -150,6 +150,12 @@ def test_tools_list_contains_cosk_semantic_search(prebuilt_index_dir: Path) -> N
     assert any(tool.name == "cosk_semantic_search" for tool in tools.tools)
 
 
+def test_tools_list_contains_all_tools(prebuilt_index_dir: Path) -> None:
+    tools = _run_mcp_session(["--db-dir", str(prebuilt_index_dir)], lambda session: session.list_tools())
+    names = {tool.name for tool in tools.tools}
+    assert {"cosk_semantic_search", "cosk_get_neighbors", "cosk_expand_definition", "cosk_find_usage"} <= names
+
+
 def test_cosk_semantic_search_happy_path_returns_required_json_fields(prebuilt_index_dir: Path) -> None:
     async def _call(session: ClientSession) -> Any:
         return await session.call_tool("cosk_semantic_search", {"query_string": "user authentication"})
@@ -170,12 +176,113 @@ def test_cosk_semantic_search_blank_query_returns_mcp_error(prebuilt_index_dir: 
     assert result.isError is True
 
 
+def test_cosk_get_neighbors_returns_is_error_true_when_graph_not_loaded(prebuilt_index_dir: Path) -> None:
+    async def _call(session: ClientSession) -> Any:
+        return await session.call_tool("cosk_get_neighbors", {"node_id": "module.py:1"})
+
+    result = _run_mcp_session(["--db-dir", str(prebuilt_index_dir)], _call)
+    assert result.isError is True
+    assert "relationship graph is not loaded" in _tool_text_payload(result)
+
+
+def test_cosk_get_neighbors_blank_node_id_returns_mcp_error(prebuilt_index_dir: Path) -> None:
+    async def _call(session: ClientSession) -> Any:
+        return await session.call_tool("cosk_get_neighbors", {"node_id": "   "})
+
+    result = _run_mcp_session(["--db-dir", str(prebuilt_index_dir)], _call)
+    assert result.isError is True
+
+
+def test_cosk_find_usage_returns_is_error_true_when_graph_not_loaded(prebuilt_index_dir: Path) -> None:
+    async def _call(session: ClientSession) -> Any:
+        return await session.call_tool("cosk_find_usage", {"entity_name": "foo"})
+
+    result = _run_mcp_session(["--db-dir", str(prebuilt_index_dir)], _call)
+    assert result.isError is True
+    assert "relationship graph is not loaded" in _tool_text_payload(result)
+
+
+def test_cosk_find_usage_blank_entity_name_returns_mcp_error(prebuilt_index_dir: Path) -> None:
+    async def _call(session: ClientSession) -> Any:
+        return await session.call_tool("cosk_find_usage", {"entity_name": "   "})
+
+    result = _run_mcp_session(["--db-dir", str(prebuilt_index_dir)], _call)
+    assert result.isError is True
+
+
 def test_cosk_semantic_search_empty_index_returns_empty_array(empty_valid_index_dir: Path) -> None:
     async def _call(session: ClientSession) -> Any:
         return await session.call_tool("cosk_semantic_search", {"query_string": "find auth"})
 
     result = _run_mcp_session(["--db-dir", str(empty_valid_index_dir)], _call)
     assert json.loads(_tool_text_payload(result)) == []
+
+
+def test_cosk_expand_definition_happy_path_returns_inclusive_text_payload(prebuilt_index_dir: Path, tmp_path: Path) -> None:
+    source_file = tmp_path / "sample.py"
+    lines = ["one\n", "two\n", "three\n", "four\n"]
+    source_file.write_text("".join(lines), encoding="utf-8")
+
+    async def _call(session: ClientSession) -> Any:
+        return await session.call_tool(
+            "cosk_expand_definition",
+            {"file_path": str(source_file), "start_line": 2, "end_line": 3},
+        )
+
+    result = _run_mcp_session(["--db-dir", str(prebuilt_index_dir)], _call)
+    assert not result.isError
+    assert _tool_text_payload(result) == "".join(lines[1:3])
+
+
+def test_cosk_expand_definition_missing_file_returns_text_not_tool_error(
+    prebuilt_index_dir: Path, tmp_path: Path
+) -> None:
+    missing_file = tmp_path / "missing.py"
+
+    async def _call(session: ClientSession) -> Any:
+        return await session.call_tool(
+            "cosk_expand_definition",
+            {"file_path": str(missing_file), "start_line": 1, "end_line": 2},
+        )
+
+    result = _run_mcp_session(["--db-dir", str(prebuilt_index_dir)], _call)
+    assert not result.isError
+    payload = _tool_text_payload(result)
+    assert isinstance(payload, str)
+    assert str(missing_file) in payload
+
+
+def test_cosk_expand_definition_out_of_range_returns_descriptive_text_not_tool_error(
+    prebuilt_index_dir: Path, tmp_path: Path
+) -> None:
+    source_file = tmp_path / "sample.py"
+    source_file.write_text("a\nb\n", encoding="utf-8")
+
+    async def _call(session: ClientSession) -> Any:
+        return await session.call_tool(
+            "cosk_expand_definition",
+            {"file_path": str(source_file), "start_line": 2, "end_line": 4},
+        )
+
+    result = _run_mcp_session(["--db-dir", str(prebuilt_index_dir)], _call)
+    assert not result.isError
+    assert "Requested line range 2-4 is outside file bounds; file has 2 lines." in _tool_text_payload(result)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"file_path": "file.py", "start_line": 0, "end_line": 1},
+        {"file_path": "file.py", "start_line": 3, "end_line": 2},
+        {"file_path": "   ", "start_line": 1, "end_line": 1},
+    ],
+)
+def test_cosk_expand_definition_invalid_params_return_mcp_error(prebuilt_index_dir: Path, payload: dict[str, object]) -> None:
+    async def _call(session: ClientSession) -> Any:
+        return await session.call_tool("cosk_expand_definition", payload)
+
+    result = _run_mcp_session(["--db-dir", str(prebuilt_index_dir)], _call)
+    assert result.isError is True
 
 
 def test_e2e_agent_flow_initialize_list_tools_call_search(prebuilt_index_dir: Path) -> None:
