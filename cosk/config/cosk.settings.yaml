@@ -3,6 +3,7 @@ extraction:
   exclude_dirs: [__pycache__, .git, node_modules, .venv]
   follow_symlinks: false
   strict: false
+  respect_gitignore: true
   summarizer:
     callable_path: null
     kwargs: {}

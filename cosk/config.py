@@ -34,6 +34,7 @@ class ExtractionSettings:
     exclude_dirs: tuple[str, ...] = ("__pycache__", ".git", "node_modules", ".venv")
     follow_symlinks: bool = False
     strict: bool = False
+    respect_gitignore: bool = True
     summarizer: SummarizerSettings = field(default_factory=SummarizerSettings)
 
 
@@ -67,6 +68,7 @@ def _parse_config(data: dict) -> CoskConfig:
             exclude_dirs=tuple(ext.get("exclude_dirs", ("__pycache__", ".git", "node_modules", ".venv"))),
             follow_symlinks=ext.get("follow_symlinks", False),
             strict=ext.get("strict", False),
+            respect_gitignore=ext.get("respect_gitignore", True),
             summarizer=summarizer,
         )
     )

@@ -7,6 +7,7 @@ from cosk.config import (
     ExtractionSettings,
     LanguageSettings,
     SummarizerSettings,
+    _parse_config,
     get_cosk_config,
     validate_cosk_config,
 )
@@ -50,3 +51,20 @@ def test_config_has_no_submodule_hardcoded_language_fallbacks() -> None:
     config = get_cosk_config()
     names = [language.name for language in config.extraction.supported_languages]
     assert "python" in names
+
+
+def test_extraction_settings_respect_gitignore_defaults_true() -> None:
+    config = get_cosk_config()
+    assert config.extraction.respect_gitignore is True
+
+
+def test_parse_config_reads_respect_gitignore_false() -> None:
+    parsed = _parse_config(
+        {
+            "extraction": {
+                "supported_languages": [],
+                "respect_gitignore": False,
+            }
+        }
+    )
+    assert parsed.extraction.respect_gitignore is False

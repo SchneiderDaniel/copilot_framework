@@ -96,3 +96,31 @@ def test_pyproject_contains_rich_dependency() -> None:
     pyproject = tomllib.loads((COSK_DIR / "pyproject.toml").read_text(encoding="utf-8"))
     dependencies = pyproject["project"]["dependencies"]
     assert any(dep.startswith("rich>=13.0,<14.0") for dep in dependencies)
+
+
+def test_readme_documents_cosk_cli_subcommands() -> None:
+    text = _readme()
+    assert "cosk index" in text
+    assert "cosk serve" in text
+    assert "cosk inspect" in text
+
+
+def test_readme_documents_gitignore_behavior_and_cli_opt_out() -> None:
+    text = _readme().lower()
+    assert ".gitignore" in text
+    assert "--no-gitignore" in text
+
+
+def test_readme_mentions_backward_compatible_python_module_entrypoints() -> None:
+    text = _readme()
+    assert "python -m cosk.mcp.server" in text
+    assert "python -m cosk.inspect" in text
+
+
+def test_walkthrough_documents_gitignore_layering_and_new_cli() -> None:
+    text = (COSK_DIR / "WALKTHROUGH.md").read_text(encoding="utf-8").lower()
+    assert ".gitignore" in text
+    assert "exclude_dirs" in text
+    assert "cosk index" in text
+    assert "cosk serve" in text
+    assert "cosk inspect" in text

@@ -3,12 +3,13 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Sequence
 import ast
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from importlib import import_module
 import os
 from pathlib import Path
 import warnings
 
+import pathspec
 from tree_sitter import Language, Parser
 
 from cosk.config import CoskConfig, LanguageSettings, get_cosk_config
@@ -113,15 +114,117 @@ def skeleton_nodes_to_json(nodes: Sequence[SkeletonNode]) -> list[dict[str, obje
     return [asdict(node) for node in nodes]
 
 
+@dataclass(frozen=True, slots=True)
+class _GitIgnoreScope:
+    directory: Path
+    raw_lines: tuple[str, ...]
+
+
+def _load_gitignore_lines(directory: Path) -> tuple[str, ...]:
+    gitignore_path = directory / ".gitignore"
+    if not gitignore_path.is_file():
+        return ()
+    return tuple(gitignore_path.read_text(encoding="utf-8").splitlines())
+
+
+def _scoped_patterns(root: Path, scope_dir: Path, raw_lines: tuple[str, ...]) -> list[str]:
+    prefix = scope_dir.relative_to(root).as_posix() if scope_dir != root else ""
+    scoped: list[str] = []
+    for raw_line in raw_lines:
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        negated = stripped.startswith("!")
+        pattern = stripped[1:] if negated else stripped
+        anchored = pattern.startswith("/")
+        pattern_body = pattern[1:] if anchored else pattern
+        if not pattern_body:
+            continue
+
+        has_slash = "/" in pattern_body
+        if anchored or has_slash:
+            transformed_patterns = [f"{prefix}/{pattern_body}" if prefix else pattern_body]
+        else:
+            if prefix:
+                transformed_patterns = [f"{prefix}/{pattern_body}", f"{prefix}/**/{pattern_body}"]
+            else:
+                transformed_patterns = [pattern_body, f"**/{pattern_body}"]
+
+        for transformed in transformed_patterns:
+            scoped.append(f"!{transformed}" if negated else transformed)
+    return scoped
+
+
+def _compile_scoped_gitignore(
+    root: Path, scopes: tuple[_GitIgnoreScope, ...]
+) -> pathspec.GitIgnoreSpec | None:
+    patterns: list[str] = []
+    for scope in scopes:
+        patterns.extend(_scoped_patterns(root, scope.directory, scope.raw_lines))
+    if not patterns:
+        return None
+    return pathspec.GitIgnoreSpec.from_lines(patterns)
+
+
+def _matches_gitignore(spec: pathspec.GitIgnoreSpec | None, relative_path: str, *, is_dir: bool) -> bool:
+    if spec is None:
+        return False
+    normalized = relative_path.replace("\\", "/")
+    candidate = f"{normalized}/" if is_dir and not normalized.endswith("/") else normalized
+    return spec.match_file(candidate)
+
+
 def _iter_supported_files(root: Path, config: CoskConfig) -> list[Path]:
     files: list[Path] = []
     extension_registry = build_extension_registry(config)
+    respect_gitignore = config.extraction.respect_gitignore
+    scope_cache: dict[Path, tuple[_GitIgnoreScope, ...]] = {}
+    spec_cache: dict[Path, pathspec.GitIgnoreSpec | None] = {}
+
+    if respect_gitignore:
+        root_lines = _load_gitignore_lines(root)
+        root_scopes = (_GitIgnoreScope(root, root_lines),) if root_lines else ()
+        scope_cache[root] = root_scopes
+        spec_cache[root] = _compile_scoped_gitignore(root, root_scopes)
+
     for current_root, dir_names, file_names in os.walk(
         root, followlinks=config.extraction.follow_symlinks
     ):
-        dir_names[:] = sorted(name for name in dir_names if name not in config.extraction.exclude_dirs)
+        current_path = Path(current_root)
+        active_spec = None
+        active_scopes: tuple[_GitIgnoreScope, ...] = ()
+        if respect_gitignore:
+            active_scopes = scope_cache.get(current_path, ())
+            active_spec = spec_cache.get(current_path)
+
+        retained_dirs: list[str] = []
+        for dir_name in sorted(dir_names):
+            if dir_name in config.extraction.exclude_dirs:
+                continue
+            child_dir = current_path / dir_name
+            relative_dir = child_dir.relative_to(root).as_posix()
+            if respect_gitignore and _matches_gitignore(active_spec, relative_dir, is_dir=True):
+                continue
+            retained_dirs.append(dir_name)
+
+            if respect_gitignore:
+                child_lines = _load_gitignore_lines(child_dir)
+                child_scopes = (
+                    (*active_scopes, _GitIgnoreScope(child_dir, child_lines))
+                    if child_lines
+                    else active_scopes
+                )
+                scope_cache[child_dir] = child_scopes
+                spec_cache[child_dir] = _compile_scoped_gitignore(root, child_scopes)
+
+        dir_names[:] = retained_dirs
         for file_name in sorted(file_names):
             candidate = Path(current_root) / file_name
+            if respect_gitignore:
+                relative_file = candidate.relative_to(root).as_posix()
+                if _matches_gitignore(active_spec, relative_file, is_dir=False):
+                    continue
             if candidate.suffix in extension_registry:
                 files.append(candidate)
     return files

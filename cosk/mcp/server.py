@@ -33,6 +33,7 @@ from pathlib import Path
 import sys
 from typing import Any
 
+from cosk.config import CoskConfig
 from cosk.extraction.parser import extract_skeleton_nodes
 from cosk.graph import state
 from cosk.indexing.embedding import GeminiEmbeddingProvider
@@ -76,6 +77,7 @@ def _load_mcp_sdk_modules() -> tuple[Any, Any, Any, Any]:
 
 
 mcp_types, FastMCP, McpError, Context = _load_mcp_sdk_modules()
+DEFAULT_DB_DIR = Path(__file__).resolve().parents[1] / ".lancedb"
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -84,13 +86,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--db-dir",
         type=Path,
-        default=Path(__file__).resolve().parents[1] / ".lancedb",
+        default=DEFAULT_DB_DIR,
         help="LanceDB directory path.",
     )
     return parser.parse_args(argv)
 
 
-def _load_embedding_provider() -> Any:
+def load_embedding_provider() -> Any:
     provider_factory = os.getenv("COSK_EMBEDDING_PROVIDER_FACTORY")
     if not provider_factory:
         return GeminiEmbeddingProvider()
@@ -113,20 +115,26 @@ def _load_embedding_provider() -> Any:
     return provider
 
 
-def _validate_and_load_index(db_dir: Path, embedding_provider: Any) -> SkeletonNodeVectorStore:
+def validate_and_load_index(db_dir: Path, embedding_provider: Any) -> SkeletonNodeVectorStore:
     vector_store = SkeletonNodeVectorStore(db_dir=db_dir, embedding_provider=embedding_provider)
     if not vector_store.validate_index():
         raise SystemExit(f"Existing index missing or invalid at '{db_dir}'.")
     return vector_store
 
 
-def _build_index_from_target(target_dir: Path, db_dir: Path, embedding_provider: Any) -> SkeletonNodeVectorStore:
+def build_index_from_target(
+    target_dir: Path,
+    db_dir: Path,
+    embedding_provider: Any,
+    *,
+    config: CoskConfig | None = None,
+) -> SkeletonNodeVectorStore:
     if not target_dir.exists() or not target_dir.is_dir():
         raise SystemExit(f"Target directory does not exist or is not a directory: '{target_dir}'.")
 
     vector_store = SkeletonNodeVectorStore(db_dir=db_dir, embedding_provider=embedding_provider)
     try:
-        nodes = extract_skeleton_nodes(target_dir)
+        nodes = extract_skeleton_nodes(target_dir, config=config)
         vector_store.rebuild_index(nodes)
     except SystemExit:
         raise
@@ -233,11 +241,11 @@ def create_mcp_server(vector_store: SkeletonNodeVectorStore) -> FastMCP:
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     try:
-        embedding_provider = _load_embedding_provider()
+        embedding_provider = load_embedding_provider()
         if args.target_dir is not None:
-            vector_store = _build_index_from_target(args.target_dir, args.db_dir, embedding_provider)
+            vector_store = build_index_from_target(args.target_dir, args.db_dir, embedding_provider)
         else:
-            vector_store = _validate_and_load_index(args.db_dir, embedding_provider)
+            vector_store = validate_and_load_index(args.db_dir, embedding_provider)
         create_mcp_server(vector_store).run("stdio")
     except SystemExit:
         raise

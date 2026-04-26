@@ -41,7 +41,11 @@ dependencies = [
   "google-genai>=0.8,<1.0",
   "mcp>=1.26,<2.0",
   "rich>=13.0,<14.0",
+  "pathspec>=0.12,<1.0",
 ]
+
+[project.scripts]
+cosk = "cosk.cli:main"
 
 [tool.setuptools]
 packages = [

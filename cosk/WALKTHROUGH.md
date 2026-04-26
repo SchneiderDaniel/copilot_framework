@@ -259,21 +259,25 @@ This is the largest and most complex file. It ties together the registry, query 
 
 **Two public entry points:**
 
-- `extract_skeleton_nodes(directory, *, summarize, config)` — walks an entire directory tree and collects nodes from all supported files. Internally it calls `_iter_supported_files()` (which uses `os.walk` with directory filtering) and then calls `extract_file_skeleton_nodes` on each.
+- `extract_skeleton_nodes(directory, *, summarize, config)` — walks an entire directory tree and collects nodes from all supported files. Internally it calls `_iter_supported_files()` (which uses `os.walk` with `exclude_dirs` + layered `.gitignore` filtering) and then calls `extract_file_skeleton_nodes` on each.
 - `extract_file_skeleton_nodes(file_path, *, summarize, config)` — processes a single file and returns its nodes. This is the core logic.
 
 **What `_iter_supported_files` does:**
 
 ```python
 for current_root, dir_names, file_names in os.walk(root, ...):
-    # Remove excluded dirs from dir_names IN-PLACE — this tells os.walk not to descend into them
-    dir_names[:] = sorted(name for name in dir_names if name not in config.extraction.exclude_dirs)
+    # Remove excluded dirs and .gitignore-matched dirs IN-PLACE (top-down prune)
+    dir_names[:] = sorted(
+        name for name in dir_names
+        if name not in config.extraction.exclude_dirs
+        and not matches_layered_gitignore(current_root / name)
+    )
     for file_name in sorted(file_names):
-        if file.suffix in extension_registry:
+        if not matches_layered_gitignore(current_root / file_name) and file.suffix in extension_registry:
             yield file
 ```
 
-The in-place mutation of `dir_names` is the standard Python pattern for pruning `os.walk` traversal. Files and directories are sorted for deterministic ordering.
+Layered `.gitignore` behavior is scoped by directory: root rules apply globally; nested `.gitignore` rules apply only to their subtree; negations are preserved. If `respect_gitignore=False` or no `.gitignore` files are present, traversal behavior matches the previous implementation. The in-place mutation of `dir_names` is the standard Python pattern for pruning `os.walk` traversal. Files and directories are sorted for deterministic ordering.
 
 **The per-file flow in detail:**
 
@@ -731,11 +735,21 @@ Tests marked `@pytest.mark.integration` install dependencies or run cross-proces
 # Install in editable mode (required before first run)
 python -m pip install -e .
 
-# Start MCP server — extract a project and build a fresh index
-python -m cosk.mcp.server --target-dir /path/to/your/project
+# Build/rebuild index only (respects .gitignore by default)
+cosk index --target-dir /path/to/your/project
 
-# Start MCP server — reuse an existing index (faster restart)
-python -m cosk.mcp.server --db-dir /path/to/.lancedb
+# Start MCP server — reuse an existing index
+cosk serve --db-dir /path/to/.lancedb
+
+# Inspect local DB + graph
+cosk inspect --db-dir /path/to/.lancedb
+
+# Optional one-run opt-out from .gitignore filtering
+cosk index --target-dir /path/to/your/project --no-gitignore
+
+# Backward compatible module entrypoints still work
+python -m cosk.mcp.server --target-dir /path/to/your/project
+python -m cosk.inspect --db-dir /path/to/.lancedb
 
 # Run all tests
 pytest tests/

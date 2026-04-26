@@ -45,3 +45,18 @@ def test_pyproject_mcp_dependency_range_is_pinned() -> None:
     mcp_dependency = next(item for item in dependencies if item.strip().startswith("mcp"))
     assert ">=1.26" in mcp_dependency
     assert "<2.0" in mcp_dependency
+
+
+def test_pyproject_declares_pathspec_dependency() -> None:
+    pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    dependencies = pyproject["project"]["dependencies"]
+    dependency_names = {item.split(";", maxsplit=1)[0].split(">=", maxsplit=1)[0].strip() for item in dependencies}
+    assert "pathspec" in dependency_names
+
+
+def test_pyproject_declares_cosk_console_script_entrypoint() -> None:
+    pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    scripts = pyproject["project"]["scripts"]
+    assert scripts["cosk"] == "cosk.cli:main"

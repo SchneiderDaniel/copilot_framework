@@ -15,6 +15,7 @@ python -m pip install -e .
 
 - Default vector database directory: `cosk/.lancedb`
 - Default config file: `cosk/config/cosk.settings.yaml`
+- `.gitignore` filtering toggle: `extraction.respect_gitignore: true`
 - Optional embedding provider override:
 
 ```bash
@@ -28,13 +29,20 @@ The factory must return an object implementing `embed(text: str) -> list[float]`
 Build or rebuild an index from a source tree:
 
 ```bash
-python -m cosk.mcp.server --target-dir C:\path\to\repo
+cosk index --target-dir C:\path\to\repo
 ```
 
 Build into a custom index directory:
 
 ```bash
-python -m cosk.mcp.server --target-dir C:\path\to\repo --db-dir C:\path\to\repo.lancedb
+cosk index --target-dir C:\path\to\repo --db-dir C:\path\to\repo.lancedb
+```
+
+By default, indexing respects layered `.gitignore` rules (root + nested) and also applies `exclude_dirs`.
+Use this only-run override if you want to include ignored files:
+
+```bash
+cosk index --target-dir C:\path\to\repo --no-gitignore
 ```
 
 ## Starting the MCP server
@@ -42,10 +50,8 @@ python -m cosk.mcp.server --target-dir C:\path\to\repo --db-dir C:\path\to\repo.
 Supported startup forms:
 
 ```bash
-python -m cosk.mcp.server
-python -m cosk.mcp.server --target-dir C:\path\to\repo
-python -m cosk.mcp.server --target-dir C:\path\to\repo --db-dir C:\path\to\repo.lancedb
-python -m cosk.mcp.server --db-dir C:\path\to\repo.lancedb
+cosk serve
+cosk serve --db-dir C:\path\to\repo.lancedb
 ```
 
 Transport is **stdio**. Clients launch Cosk as a subprocess per session (no persistent background server process documented).
@@ -209,8 +215,8 @@ Cycle rejection occurs in graph building (`cosk/graph/builder.py`), and depth-li
 Inspect index + graph status from terminal:
 
 ```bash
-python -m cosk.inspect
-python -m cosk.inspect --db-dir C:\path\to\repo.lancedb
+cosk inspect
+cosk inspect --db-dir C:\path\to\repo.lancedb
 ```
 
 Inspector shows:
@@ -236,3 +242,13 @@ Footer: Tip: Use --db-dir to inspect a non-default index
 - **Graph unavailable**: graph-backed tools (`cosk_get_neighbors`, `cosk_find_usage`) return MCP `INTERNAL_ERROR` if graph is not loaded.
 - **Embedding provider override fails**: ensure `COSK_EMBEDDING_PROVIDER_FACTORY=module:callable` is importable and returns an object with `embed`.
 - **Client launch expectations**: MCP clients must spawn `python -m cosk.mcp.server` and communicate over stdio.
+
+## Backward compatibility
+
+The new CLI is primary (`cosk index`, `cosk serve`, `cosk inspect`), but module entrypoints remain supported:
+
+```bash
+python -m cosk.mcp.server
+python -m cosk.mcp.server --target-dir C:\path\to\repo
+python -m cosk.inspect
+```
