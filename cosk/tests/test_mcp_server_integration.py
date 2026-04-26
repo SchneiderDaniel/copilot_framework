@@ -7,14 +7,20 @@ from pathlib import Path
 import subprocess
 import sys
 from typing import Any
+from unittest.mock import Mock
 
 import anyio
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
+import networkx as nx
 import pytest
 
 from cosk.extraction.parser import extract_skeleton_nodes
+from cosk.graph import state
+from cosk.graph.builder import RelationshipGraph
 from cosk.indexing.vector_store import SkeletonNodeVectorStore
+from cosk.mcp.server import create_mcp_server
+from cosk.safety import middleware
 
 pytestmark = pytest.mark.integration
 
@@ -98,6 +104,37 @@ def _run_mcp_session(
 def _tool_text_payload(result: Any) -> str:
     assert result.content
     return result.content[0].text
+
+
+class _Session:
+    pass
+
+
+class _Context:
+    def __init__(self, session: _Session) -> None:
+        self.session = session
+
+
+@pytest.fixture
+def tool_functions() -> dict[str, Any]:
+    middleware._registry.clear()  # noqa: SLF001
+    state.clear_graph()
+    store = Mock()
+    store.search.return_value = []
+    mcp = create_mcp_server(store)
+    return {
+        "semantic_search": mcp._tool_manager.get_tool("cosk_semantic_search").fn,  # noqa: SLF001
+        "get_neighbors": mcp._tool_manager.get_tool("cosk_get_neighbors").fn,  # noqa: SLF001
+        "expand_definition": mcp._tool_manager.get_tool("cosk_expand_definition").fn,  # noqa: SLF001
+        "find_usage": mcp._tool_manager.get_tool("cosk_find_usage").fn,  # noqa: SLF001
+        "store": store,
+    }
+
+
+def _set_graph(*edges: tuple[str, str]) -> None:
+    graph = nx.DiGraph()
+    graph.add_edges_from(edges)
+    state.set_graph(RelationshipGraph(graph=graph))
 
 
 def test_mcp_server_starts_with_existing_index_and_serves_stdio(prebuilt_index_dir: Path) -> None:
@@ -294,3 +331,79 @@ def test_e2e_agent_flow_initialize_list_tools_call_search(prebuilt_index_dir: Pa
     tools, search_result = _run_mcp_session(["--db-dir", str(prebuilt_index_dir)], _flow)
     assert any(tool.name == "cosk_semantic_search" for tool in tools.tools)
     assert isinstance(json.loads(_tool_text_payload(search_result)), list)
+
+
+def test_safety_middleware_applies_only_to_get_neighbors(tool_functions: dict[str, Any], tmp_path: Path) -> None:
+    _set_graph(("a.py:1", "a.py:2"))
+    ctx = _Context(_Session())
+    source_file = tmp_path / "sample.py"
+    source_file.write_text("a\nb\n", encoding="utf-8")
+    tool_functions["store"].search.return_value = [{"node_id": "hash", "file_path": "a.py", "start_line": 1}]
+
+    assert json.loads(tool_functions["semantic_search"]("query", ctx=ctx))
+    assert tool_functions["expand_definition"](str(source_file), 1, 1, ctx=ctx) == "a\n"
+    assert tool_functions["find_usage"]("foo") == "[]"
+    assert json.loads(tool_functions["get_neighbors"]("a.py:1", ctx=ctx))
+    assert tool_functions["get_neighbors"]("a.py:1", ctx=ctx) == middleware.REVISIT_NOTICE
+
+
+def test_end_to_end_revisit_soft_block(tool_functions: dict[str, Any]) -> None:
+    _set_graph(("a.py:1", "a.py:2"))
+    ctx = _Context(_Session())
+    assert json.loads(tool_functions["get_neighbors"]("a.py:1", ctx=ctx))
+    assert tool_functions["get_neighbors"]("a.py:1", ctx=ctx) == middleware.REVISIT_NOTICE
+
+
+def test_end_to_end_depth_soft_block(tool_functions: dict[str, Any]) -> None:
+    _set_graph(("a.py:1", "a.py:2"), ("a.py:2", "a.py:3"), ("a.py:3", "a.py:4"), ("a.py:4", "a.py:5"))
+    ctx = _Context(_Session())
+    tool_functions["store"].search.return_value = [{"node_id": "hash", "file_path": "a.py", "start_line": 1}]
+    tool_functions["semantic_search"]("query", ctx=ctx)
+    assert tool_functions["get_neighbors"]("a.py:5", ctx=ctx) == middleware.DEPTH_NOTICE
+
+
+def test_expand_definition_unlocks_depth_limit(tool_functions: dict[str, Any], tmp_path: Path) -> None:
+    _set_graph(("a.py:1", "a.py:2"), ("a.py:2", "a.py:3"), ("a.py:3", "a.py:4"), ("a.py:4", "a.py:5"))
+    ctx = _Context(_Session())
+    tool_functions["store"].search.return_value = [{"node_id": "hash", "file_path": "a.py", "start_line": 1}]
+    tool_functions["semantic_search"]("query", ctx=ctx)
+    source_file = tmp_path / "sample.py"
+    source_file.write_text("a\n", encoding="utf-8")
+    tool_functions["expand_definition"](str(source_file), 1, 1, ctx=ctx)
+    assert json.loads(tool_functions["get_neighbors"]("a.py:5", ctx=ctx))
+
+
+def test_origin_does_not_reset_after_second_search(tool_functions: dict[str, Any]) -> None:
+    _set_graph(
+        ("origin.py:1", "a.py:2"),
+        ("a.py:2", "a.py:3"),
+        ("a.py:3", "a.py:4"),
+        ("a.py:4", "a.py:5"),
+        ("later.py:1", "a.py:5"),
+    )
+    ctx = _Context(_Session())
+    tool_functions["store"].search.return_value = [{"node_id": "hash1", "file_path": "origin.py", "start_line": 1}]
+    tool_functions["semantic_search"]("first", ctx=ctx)
+    tool_functions["store"].search.return_value = [{"node_id": "hash2", "file_path": "later.py", "start_line": 1}]
+    tool_functions["semantic_search"]("second", ctx=ctx)
+    assert tool_functions["get_neighbors"]("a.py:5", ctx=ctx) == middleware.DEPTH_NOTICE
+
+
+def test_session_disconnect_resets_state(tool_functions: dict[str, Any]) -> None:
+    _set_graph(("a.py:1", "a.py:2"))
+    ctx1 = _Context(_Session())
+    assert json.loads(tool_functions["get_neighbors"]("a.py:1", ctx=ctx1))
+    assert tool_functions["get_neighbors"]("a.py:1", ctx=ctx1) == middleware.REVISIT_NOTICE
+
+    ctx2 = _Context(_Session())
+    assert json.loads(tool_functions["get_neighbors"]("a.py:1", ctx=ctx2))
+
+
+def test_per_client_isolation(tool_functions: dict[str, Any]) -> None:
+    _set_graph(("a.py:1", "a.py:2"))
+    ctx1 = _Context(_Session())
+    ctx2 = _Context(_Session())
+    assert json.loads(tool_functions["get_neighbors"]("a.py:1", ctx=ctx1))
+    assert json.loads(tool_functions["get_neighbors"]("a.py:1", ctx=ctx2))
+    assert tool_functions["get_neighbors"]("a.py:1", ctx=ctx1) == middleware.REVISIT_NOTICE
+    assert tool_functions["get_neighbors"]("a.py:1", ctx=ctx2) == middleware.REVISIT_NOTICE

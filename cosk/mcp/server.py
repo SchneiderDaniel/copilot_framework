@@ -37,9 +37,14 @@ from cosk.extraction.parser import extract_skeleton_nodes
 from cosk.graph import state
 from cosk.indexing.embedding import GeminiEmbeddingProvider
 from cosk.indexing.vector_store import SkeletonNodeVectorStore
+from cosk.safety.middleware import (
+    record_expand_definition,
+    record_search_origin,
+    safety_wrap_get_neighbors,
+)
 
 
-def _load_mcp_sdk_modules() -> tuple[Any, Any, Any]:
+def _load_mcp_sdk_modules() -> tuple[Any, Any, Any, Any]:
     package_root = Path(__file__).resolve().parents[1]
     removed_paths: list[tuple[int, str]] = []
     for index, path in enumerate(list(sys.path)):
@@ -60,16 +65,17 @@ def _load_mcp_sdk_modules() -> tuple[Any, Any, Any]:
 
     try:
         import mcp.types as loaded_types
+        from mcp.server.fastmcp import Context as loaded_context
         from mcp.server.fastmcp import FastMCP as loaded_fast_mcp
         from mcp.shared.exceptions import McpError as loaded_mcp_error
     finally:
         for index, path in sorted(removed_paths, key=lambda item: item[0]):
             sys.path.insert(index, path)
 
-    return loaded_types, loaded_fast_mcp, loaded_mcp_error
+    return loaded_types, loaded_fast_mcp, loaded_mcp_error, loaded_context
 
 
-mcp_types, FastMCP, McpError = _load_mcp_sdk_modules()
+mcp_types, FastMCP, McpError, Context = _load_mcp_sdk_modules()
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -133,13 +139,14 @@ def create_mcp_server(vector_store: SkeletonNodeVectorStore) -> FastMCP:
     mcp = FastMCP("cosk")
 
     @mcp.tool()
-    def cosk_semantic_search(query_string: str) -> str:
+    def cosk_semantic_search(query_string: str, ctx: Context | None = None) -> str:
         if not query_string or not query_string.strip():
             raise McpError(
                 mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="query_string must not be blank")
             )
         try:
             results = vector_store.search(query_string.strip(), top_k=5)
+            record_search_origin(ctx, results)
             return json.dumps(results)
         except McpError:
             raise
@@ -148,20 +155,23 @@ def create_mcp_server(vector_store: SkeletonNodeVectorStore) -> FastMCP:
                 mcp_types.ErrorData(code=mcp_types.INTERNAL_ERROR, message=f"cosk_semantic_search failed: {exc}")
             ) from exc
 
+    def _core_get_neighbors(node_id: str) -> str:
+        graph = state.get_graph()
+        if graph is None:
+            raise McpError(
+                mcp_types.ErrorData(
+                    code=mcp_types.INTERNAL_ERROR,
+                    message="cosk_get_neighbors failed: relationship graph is not loaded",
+                )
+            )
+        return json.dumps(graph.get_neighbors(node_id))
+
     @mcp.tool()
-    def cosk_get_neighbors(node_id: str) -> str:
+    def cosk_get_neighbors(node_id: str, ctx: Context | None = None) -> str:
         if not node_id or not node_id.strip():
             raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="node_id must not be blank"))
         try:
-            graph = state.get_graph()
-            if graph is None:
-                raise McpError(
-                    mcp_types.ErrorData(
-                        code=mcp_types.INTERNAL_ERROR,
-                        message="cosk_get_neighbors failed: relationship graph is not loaded",
-                    )
-                )
-            return json.dumps(graph.get_neighbors(node_id.strip()))
+            return safety_wrap_get_neighbors(node_id.strip(), ctx, _core_get_neighbors, state.get_graph())
         except McpError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -170,7 +180,9 @@ def create_mcp_server(vector_store: SkeletonNodeVectorStore) -> FastMCP:
             ) from exc
 
     @mcp.tool()
-    def cosk_expand_definition(file_path: str, start_line: int, end_line: int) -> str:
+    def cosk_expand_definition(
+        file_path: str, start_line: int, end_line: int, ctx: Context | None = None
+    ) -> str:
         if not file_path or not file_path.strip():
             raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="file_path must not be blank"))
         if start_line < 1:
@@ -189,6 +201,7 @@ def create_mcp_server(vector_store: SkeletonNodeVectorStore) -> FastMCP:
 
         if start_line > len(lines) or end_line > len(lines):
             return f"Requested line range {start_line}-{end_line} is outside file bounds; file has {len(lines)} lines."
+        record_expand_definition(ctx)
         return "".join(lines[start_line - 1 : end_line])
 
     @mcp.tool()

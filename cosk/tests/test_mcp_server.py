@@ -11,6 +11,7 @@ from cosk.extraction.models import SkeletonNode
 from cosk.graph import state
 from cosk.graph.builder import build_graph
 from cosk.mcp.server import McpError, create_mcp_server
+from cosk.safety import middleware
 
 
 def _tool_fn(search_results: list[dict[str, object]] | None = None):
@@ -36,6 +37,7 @@ def _tool_functions():
 @pytest.fixture(autouse=True)
 def _clear_graph_state() -> None:
     state.clear_graph()
+    middleware._registry.clear()  # noqa: SLF001
 
 
 def test_server_module_docstring_contains_cli_usage_args_and_error_behavior() -> None:
@@ -101,6 +103,24 @@ def test_create_mcp_server_registers_all_tools() -> None:
     assert mcp._tool_manager.get_tool("cosk_get_neighbors") is not None  # noqa: SLF001
     assert mcp._tool_manager.get_tool("cosk_expand_definition") is not None  # noqa: SLF001
     assert mcp._tool_manager.get_tool("cosk_find_usage") is not None  # noqa: SLF001
+
+
+def test_cosk_semantic_search_behavior_unchanged_with_optional_ctx_parameter() -> None:
+    tool_fn, store = _tool_fn(
+        [
+            {
+                "node_id": "1",
+                "file_path": "a.py",
+                "start_line": 1,
+                "end_line": 1,
+                "raw_signature": "def a()",
+                "summary": "",
+            }
+        ]
+    )
+    payload = json.loads(tool_fn("query", ctx=None))
+    assert payload[0]["file_path"] == "a.py"
+    store.search.assert_called_once_with("query", top_k=5)
 
 
 @pytest.mark.parametrize("node_id", ["", "   "])
@@ -287,6 +307,13 @@ def test_cosk_expand_definition_returns_descriptive_string_for_out_of_range_requ
     assert result == "Requested line range 2-5 is outside file bounds; file has 2 lines."
 
 
+def test_cosk_expand_definition_behavior_unchanged_with_optional_ctx_parameter(tmp_path: Path) -> None:
+    source_file = tmp_path / "sample.py"
+    source_file.write_text("line 1\nline 2\n", encoding="utf-8")
+    result = _tool_functions()["expand_definition"](str(source_file), 1, 2, ctx=None)
+    assert result == "line 1\nline 2\n"
+
+
 def test_cosk_expand_definition_uses_builtin_open_for_file_reading(monkeypatch: pytest.MonkeyPatch) -> None:
     opened_paths: list[str] = []
 
@@ -308,3 +335,13 @@ def test_cosk_expand_definition_uses_builtin_open_for_file_reading(monkeypatch: 
     result = _tool_functions()["expand_definition"]("spy-path.py", 1, 2)
     assert opened_paths == ["spy-path.py"]
     assert result == "alpha\nbeta\n"
+
+
+def test_cosk_find_usage_behavior_unchanged_with_middleware_present() -> None:
+    nodes = [
+        SkeletonNode(file_path="callee.py", start_line=1, end_line=1, raw_signature="def foo():", docstring=""),
+        SkeletonNode(file_path="caller.py", start_line=5, end_line=5, raw_signature="def bar(x=foo()):", docstring=""),
+    ]
+    state.set_graph(build_graph(nodes))
+    result = json.loads(_tool_functions()["find_usage"]("foo"))
+    assert result and result[0]["file_path"] == "caller.py"
