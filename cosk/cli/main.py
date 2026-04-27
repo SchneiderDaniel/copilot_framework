@@ -7,12 +7,12 @@ from pathlib import Path
 
 from cosk import inspect
 from cosk.cli.output import write_error, write_json
-from cosk.config import TopKValidationError, get_cosk_config, resolve_top_k
+from cosk.config import CoskConfig, TopKValidationError, get_cosk_config, resolve_top_k
 from cosk.http_server import run_http_server
 from cosk.index_manager import IndexManager
 from cosk.index_service import IndexBuildRequest
 from cosk.mcp import server
-from cosk.repo_registry import RegistryError, load_registry, remove_index, set_default_index
+from cosk.repo_registry import load_registry, remove_index, set_default_index
 from cosk.watch_mode import run_watch_loop
 
 
@@ -94,6 +94,12 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _apply_no_gitignore(config: CoskConfig, args: argparse.Namespace) -> CoskConfig:
+    if args.no_gitignore:
+        return replace(config, extraction=replace(config.extraction, respect_gitignore=False))
+    return config
+
+
 def _make_manager(args: argparse.Namespace, config) -> IndexManager:
     return IndexManager(
         embedding_provider=server.load_embedding_provider(),
@@ -103,10 +109,7 @@ def _make_manager(args: argparse.Namespace, config) -> IndexManager:
 
 
 def _run_index(args: argparse.Namespace) -> int:
-    base_config = get_cosk_config()
-    config = base_config
-    if args.no_gitignore:
-        config = replace(base_config, extraction=replace(base_config.extraction, respect_gitignore=False))
+    config = _apply_no_gitignore(get_cosk_config(), args)
     manager = _make_manager(args, config)
     result = manager.sync(
         IndexBuildRequest(
@@ -180,10 +183,7 @@ def _run_find_usage(args: argparse.Namespace) -> int:
 
 
 def _run_watch(args: argparse.Namespace) -> int:
-    base_config = get_cosk_config()
-    config = base_config
-    if args.no_gitignore:
-        config = replace(base_config, extraction=replace(base_config.extraction, respect_gitignore=False))
+    config = _apply_no_gitignore(get_cosk_config(), args)
     manager = _make_manager(args, config)
     return run_watch_loop(manager=manager, target_dir=args.target_dir, db_dir=args.db_dir, name=args.name)
 
@@ -239,9 +239,6 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     try:
         exit_code = int(args.handler(args))
-    except (ValueError, RuntimeError, RegistryError) as exc:
-        write_error(str(exc))
-        raise SystemExit(1) from exc
     except Exception as exc:  # noqa: BLE001
         write_error(str(exc))
         raise SystemExit(1) from exc

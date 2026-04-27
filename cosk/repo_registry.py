@@ -76,8 +76,6 @@ def upsert_index(
     )
     if not registry.default:
         registry.default = name
-    if name == "default" and "default" not in registry.indexes:
-        registry.default = "default"
     save_registry(registry, cwd)
     return registry
 

@@ -59,14 +59,12 @@ def _extract_defined_name(raw_signature: str) -> str | None:
     for statement in tree.body:
         if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             return statement.name
-
-    for statement in tree.body:
         if isinstance(statement, ast.Import):
-            first_alias = statement.names[0]
-            return first_alias.asname or first_alias.name.split(".")[0]
+            alias = statement.names[0]
+            return alias.asname or alias.name.split(".")[0]
         if isinstance(statement, ast.ImportFrom):
-            first_alias = statement.names[0]
-            return first_alias.asname or first_alias.name
+            alias = statement.names[0]
+            return alias.asname or alias.name
 
     return None
 

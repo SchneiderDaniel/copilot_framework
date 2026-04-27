@@ -51,29 +51,30 @@ def _resolve_db_dir(request: IndexBuildRequest) -> Path:
 def _full_sync(
     request: IndexBuildRequest,
     vector_store: SkeletonNodeVectorStore,
+    index_name: str,
     *,
     mode: Literal["full", "incremental_fallback_full"] = "full",
     warnings: list[str] | None = None,
 ) -> IndexSyncResult:
+    db_dir = _resolve_db_dir(request)
     config = request.config or get_cosk_config()
     nodes = extract_skeleton_nodes(request.target_dir, config=config)
     vector_store.rebuild_index(nodes)
     rebuild(nodes)
     current_snapshot = snapshot_files(request.target_dir, config)
     manifest = build_manifest(request.target_dir, config, current_snapshot)
-    save_manifest(_resolve_db_dir(request), manifest)
-    index_name = request.name or "default"
+    save_manifest(db_dir, manifest)
     upsert_index(
         index_name,
         request.target_dir,
-        _resolve_db_dir(request),
+        db_dir,
         last_indexed_at=manifest.last_indexed_at,
     )
     return IndexSyncResult(
         mode=mode,
         index_name=index_name,
         target_dir=request.target_dir.resolve().as_posix(),
-        db_dir=_resolve_db_dir(request).resolve().as_posix(),
+        db_dir=db_dir.resolve().as_posix(),
         added_files=len(current_snapshot),
         updated_files=0,
         deleted_files=0,
@@ -94,9 +95,10 @@ def sync_index(request: IndexBuildRequest, embedding_provider: object) -> IndexS
     if not request.target_dir.exists() or not request.target_dir.is_dir():
         raise ValueError(f"Target directory does not exist or is not a directory: '{request.target_dir}'.")
     vector_store = SkeletonNodeVectorStore(db_dir=request.db_dir, embedding_provider=embedding_provider)
+    index_name = request.name or "default"
 
     if not request.incremental:
-        return _full_sync(request, vector_store)
+        return _full_sync(request, vector_store, index_name)
 
     warnings: list[str] = []
     try:
@@ -107,11 +109,11 @@ def sync_index(request: IndexBuildRequest, embedding_provider: object) -> IndexS
 
     if not vector_store.validate_index() or manifest is None:
         warnings.append("Incremental index unavailable; ran full indexing.")
-        return _full_sync(request, vector_store, mode="incremental_fallback_full", warnings=warnings)
+        return _full_sync(request, vector_store, index_name, mode="incremental_fallback_full", warnings=warnings)
 
     if manifest.target_dir != request.target_dir.resolve().as_posix():
         warnings.append("Manifest target directory mismatch; ran full indexing.")
-        return _full_sync(request, vector_store, mode="incremental_fallback_full", warnings=warnings)
+        return _full_sync(request, vector_store, index_name, mode="incremental_fallback_full", warnings=warnings)
 
     current_snapshot = snapshot_files(request.target_dir, config)
     added, updated, deleted = diff_manifest(manifest.files, current_snapshot)
@@ -133,7 +135,6 @@ def sync_index(request: IndexBuildRequest, embedding_provider: object) -> IndexS
 
     new_manifest = build_manifest(request.target_dir, config, current_snapshot)
     save_manifest(request.db_dir, new_manifest)
-    index_name = request.name or "default"
     upsert_index(index_name, request.target_dir, request.db_dir, last_indexed_at=new_manifest.last_indexed_at)
 
     return IndexSyncResult(

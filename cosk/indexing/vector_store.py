@@ -51,6 +51,17 @@ class SkeletonNodeVectorStore:
         digest = hashlib.sha256(f"{node.file_path}:{node.start_line}".encode("utf-8"))
         return digest.hexdigest()
 
+    def _build_row(self, node: SkeletonNode, vector: list[float]) -> dict[str, object]:
+        return {
+            "node_id": self.compute_node_id(node),
+            "file_path": node.file_path,
+            "start_line": node.start_line,
+            "end_line": node.end_line,
+            "raw_signature": node.raw_signature,
+            "summary": node.docstring,
+            "vector": [float(v) for v in vector],
+        }
+
     @staticmethod
     def _schema(vector_dim: int) -> pa.Schema:
         return pa.schema(
@@ -113,17 +124,7 @@ class SkeletonNodeVectorStore:
                     vector_dim = len(vector)
                 if len(vector) != vector_dim:
                     raise ValueError("embedding vector dimension mismatch across nodes")
-                rows.append(
-                    {
-                        "node_id": self.compute_node_id(node),
-                        "file_path": node.file_path,
-                        "start_line": node.start_line,
-                        "end_line": node.end_line,
-                        "raw_signature": node.raw_signature,
-                        "summary": node.docstring,
-                        "vector": [float(value) for value in vector],
-                    }
-                )
+                rows.append(self._build_row(node, vector))
         else:
             probe_vector = self._embedding_provider.embed("cosk-empty-index-probe")
             if not probe_vector:
@@ -163,17 +164,7 @@ class SkeletonNodeVectorStore:
                     raise ValueError("embedding vector must not be empty")
             if len(vector) != first_vector_dim:
                 raise ValueError("embedding vector dimension mismatch across nodes")
-            rows.append(
-                {
-                    "node_id": self.compute_node_id(node),
-                    "file_path": node.file_path,
-                    "start_line": node.start_line,
-                    "end_line": node.end_line,
-                    "raw_signature": node.raw_signature,
-                    "summary": node.docstring,
-                    "vector": [float(value) for value in vector],
-                }
-            )
+            rows.append(self._build_row(node, vector))
 
         if self._vector_dim is None and first_vector_dim is not None:
             self._vector_dim = first_vector_dim
@@ -271,9 +262,8 @@ class SkeletonNodeVectorStore:
             raise ValueError("query embedding vector dimension mismatch")
 
         rows = table.search([float(value) for value in query_vector]).limit(top_k).to_list()
-        results: list[SkeletonNodeSearchResult] = []
-        for row in rows:
-            cleaned = {
+        return [
+            {
                 "node_id": row["node_id"],
                 "file_path": row["file_path"],
                 "start_line": row["start_line"],
@@ -281,5 +271,5 @@ class SkeletonNodeVectorStore:
                 "raw_signature": row["raw_signature"],
                 "summary": row["summary"],
             }
-            results.append(cleaned)
-        return results
+            for row in rows
+        ]
