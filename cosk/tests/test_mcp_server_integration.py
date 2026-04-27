@@ -202,7 +202,9 @@ def test_cosk_semantic_search_happy_path_returns_required_json_fields(prebuilt_i
     assert isinstance(payload, list)
     assert len(payload) <= 5
     if payload:
-        assert set(payload[0]) == {"node_id", "file_path", "start_line", "end_line", "raw_signature", "summary"}
+        assert {"node_id", "file_path", "start_line", "end_line", "raw_signature", "summary"} <= set(payload[0])
+        assert "graph_node_id" in payload[0]
+        assert "token_count" in payload[0]
 
 
 def test_cosk_semantic_search_blank_query_returns_mcp_error(prebuilt_index_dir: Path) -> None:
@@ -213,13 +215,14 @@ def test_cosk_semantic_search_blank_query_returns_mcp_error(prebuilt_index_dir: 
     assert result.isError is True
 
 
-def test_cosk_get_neighbors_returns_is_error_true_when_graph_not_loaded(prebuilt_index_dir: Path) -> None:
+def test_cosk_get_neighbors_works_when_graph_rebuilt_from_loaded_index(prebuilt_index_dir: Path) -> None:
     async def _call(session: ClientSession) -> Any:
         return await session.call_tool("cosk_get_neighbors", {"node_id": "module.py:1"})
 
     result = _run_mcp_session(["--db-dir", str(prebuilt_index_dir)], _call)
-    assert result.isError is True
-    assert "relationship graph is not loaded" in _tool_text_payload(result)
+    assert result.isError is False
+    payload = json.loads(_tool_text_payload(result))
+    assert set(payload) == {"inbound", "outbound"}
 
 
 def test_cosk_get_neighbors_blank_node_id_returns_mcp_error(prebuilt_index_dir: Path) -> None:
@@ -230,13 +233,13 @@ def test_cosk_get_neighbors_blank_node_id_returns_mcp_error(prebuilt_index_dir: 
     assert result.isError is True
 
 
-def test_cosk_find_usage_returns_is_error_true_when_graph_not_loaded(prebuilt_index_dir: Path) -> None:
+def test_cosk_find_usage_works_when_graph_rebuilt_from_loaded_index(prebuilt_index_dir: Path) -> None:
     async def _call(session: ClientSession) -> Any:
         return await session.call_tool("cosk_find_usage", {"entity_name": "foo"})
 
     result = _run_mcp_session(["--db-dir", str(prebuilt_index_dir)], _call)
-    assert result.isError is True
-    assert "relationship graph is not loaded" in _tool_text_payload(result)
+    assert result.isError is False
+    assert isinstance(json.loads(_tool_text_payload(result)), list)
 
 
 def test_cosk_find_usage_blank_entity_name_returns_mcp_error(prebuilt_index_dir: Path) -> None:

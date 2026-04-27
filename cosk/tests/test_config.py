@@ -9,6 +9,8 @@ from cosk.config import (
     SummarizerSettings,
     _parse_config,
     get_cosk_config,
+    get_cosk_config as _get_cosk_config,
+    resolve_top_k,
     validate_cosk_config,
 )
 
@@ -68,3 +70,13 @@ def test_parse_config_reads_respect_gitignore_false() -> None:
         }
     )
     assert parsed.extraction.respect_gitignore is False
+
+
+def test_cosk_max_top_k_env_overrides_yaml(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("COSK_MAX_TOP_K", "2")
+    _get_cosk_config.cache_clear()
+    config = get_cosk_config()
+    top_k, warnings = resolve_top_k(9, config)
+    assert top_k == 2
+    assert warnings
+    _get_cosk_config.cache_clear()

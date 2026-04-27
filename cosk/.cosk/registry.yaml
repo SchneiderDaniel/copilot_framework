@@ -1,0 +1,7 @@
+version: 1
+default: default
+indexes:
+  default:
+    target_dir: C:/Users/miria/AppData/Local/Temp/pytest-of-miria/pytest-470/test_incremental_missing_manif0/src
+    db_dir: C:/Users/miria/AppData/Local/Temp/pytest-of-miria/pytest-470/test_incremental_missing_manif0/.lancedb
+    last_indexed_at: '2026-04-27T19:01:34.745910+00:00'

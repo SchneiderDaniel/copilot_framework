@@ -274,6 +274,17 @@ def test_search_rejects_query_vector_dimension_mismatch(monkeypatch: pytest.Monk
         store.search("query")
 
 
+def test_delete_by_file_paths_issues_delete_query(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = SkeletonNodeVectorStore(embedding_provider=FakeEmbeddingProvider([[1.0]]))
+    table = MagicMock()
+    db = MagicMock()
+    db.open_table.return_value = table
+    monkeypatch.setattr("cosk.indexing.vector_store.lancedb.connect", MagicMock(return_value=db))
+    deleted = store.delete_by_file_paths(["a.py"])
+    assert deleted == 1
+    table.delete.assert_called_once()
+
+
 def test_vector_store_validate_index_false_when_missing(tmp_path: Path) -> None:
     store = SkeletonNodeVectorStore(db_dir=tmp_path / ".lancedb", embedding_provider=FakeEmbeddingProvider([[1.0]]))
     assert store.validate_index() is False

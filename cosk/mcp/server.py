@@ -1,4 +1,4 @@
-"""cosk MCP server — exposes cosk_semantic_search over the MCP stdio protocol.
+"""cosk MCP server — exposes tools over MCP stdio protocol.
 
 Usage:
   python -m cosk.mcp.server
@@ -8,19 +8,11 @@ Usage:
 
 Arguments:
   --target-dir    Directory to extract and index on startup (full rebuild).
-                  If not provided, loads existing index from --db-dir.
-  --db-dir        LanceDB directory path. Default: cosk/.lancedb (package root).
-
-Environment:
-  COSK_EMBEDDING_PROVIDER_FACTORY   Module:callable to build embedding provider
-                                    (e.g. for testing: mymodule:make_provider).
-                                    Default: GeminiEmbeddingProvider.
+  --db-dir        LanceDB directory path.
 
 Error Behaviors:
-  Startup:  Any failure aborts the process with non-zero exit and stderr message.
-  Tool:     Blank/whitespace query returns MCP tool error (isError=True).
-            Empty index returns [].
-            Runtime errors return MCP tool error.
+  Startup: startup failures abort with non-zero exit and stderr message.
+  Tool: blank query returns INVALID_PARAMS; runtime errors return INTERNAL_ERROR.
 """
 
 from __future__ import annotations
@@ -33,9 +25,10 @@ from pathlib import Path
 import sys
 from typing import Any
 
-from cosk.config import CoskConfig
-from cosk.extraction.parser import extract_skeleton_nodes
+from cosk.config import TopKValidationError, get_cosk_config, resolve_top_k
 from cosk.graph import state
+from cosk.index_manager import IndexManager
+from cosk.index_service import IndexBuildRequest
 from cosk.indexing.embedding import GeminiEmbeddingProvider
 from cosk.indexing.vector_store import SkeletonNodeVectorStore
 from cosk.safety.middleware import (
@@ -43,6 +36,7 @@ from cosk.safety.middleware import (
     record_search_origin,
     safety_wrap_get_neighbors,
 )
+from cosk.token_estimation import estimate_with_warnings
 
 
 def _load_mcp_sdk_modules() -> tuple[Any, Any, Any, Any]:
@@ -52,18 +46,15 @@ def _load_mcp_sdk_modules() -> tuple[Any, Any, Any, Any]:
         resolved = Path(path or os.getcwd()).resolve()
         if resolved == package_root:
             removed_paths.append((index, path))
-
     for _, path in removed_paths:
         while path in sys.path:
             sys.path.remove(path)
-
     existing_module = sys.modules.get("mcp")
     if existing_module is not None:
         module_file = getattr(existing_module, "__file__", "")
         if module_file and Path(module_file).resolve().parent == package_root / "mcp":
             for module_name in [name for name in list(sys.modules) if name == "mcp" or name.startswith("mcp.")]:
                 del sys.modules[module_name]
-
     try:
         import mcp.types as loaded_types
         from mcp.server.fastmcp import Context as loaded_context
@@ -72,7 +63,6 @@ def _load_mcp_sdk_modules() -> tuple[Any, Any, Any, Any]:
     finally:
         for index, path in sorted(removed_paths, key=lambda item: item[0]):
             sys.path.insert(index, path)
-
     return loaded_types, loaded_fast_mcp, loaded_mcp_error, loaded_context
 
 
@@ -83,12 +73,8 @@ DEFAULT_DB_DIR = Path(__file__).resolve().parents[1] / ".lancedb"
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run cosk MCP server over stdio transport.")
     parser.add_argument("--target-dir", type=Path, default=None, help="Directory to extract and index on startup.")
-    parser.add_argument(
-        "--db-dir",
-        type=Path,
-        default=DEFAULT_DB_DIR,
-        help="LanceDB directory path.",
-    )
+    parser.add_argument("--db-dir", type=Path, default=DEFAULT_DB_DIR, help="LanceDB directory path.")
+    parser.add_argument("--index-name", type=str, default=None, help="Named index to load from registry.")
     return parser.parse_args(argv)
 
 
@@ -96,20 +82,14 @@ def load_embedding_provider() -> Any:
     provider_factory = os.getenv("COSK_EMBEDDING_PROVIDER_FACTORY")
     if not provider_factory:
         return GeminiEmbeddingProvider()
-
     if ":" not in provider_factory:
-        raise SystemExit(
-            "Invalid COSK_EMBEDDING_PROVIDER_FACTORY format. Expected 'module:callable'."
-        )
-
+        raise SystemExit("Invalid COSK_EMBEDDING_PROVIDER_FACTORY format. Expected 'module:callable'.")
     module_name, factory_name = provider_factory.split(":", maxsplit=1)
     try:
         module = import_module(module_name)
-        factory = getattr(module, factory_name)
-        provider = factory()
+        provider = getattr(module, factory_name)()
     except Exception as exc:  # noqa: BLE001
         raise SystemExit(f"Failed to load embedding provider factory '{provider_factory}': {exc}") from exc
-
     if not hasattr(provider, "embed") or not callable(provider.embed):
         raise SystemExit("Embedding provider must define an embed(text: str) method.")
     return provider
@@ -127,35 +107,115 @@ def build_index_from_target(
     db_dir: Path,
     embedding_provider: Any,
     *,
-    config: CoskConfig | None = None,
+    config=None,
 ) -> SkeletonNodeVectorStore:
-    if not target_dir.exists() or not target_dir.is_dir():
-        raise SystemExit(f"Target directory does not exist or is not a directory: '{target_dir}'.")
+    manager = IndexManager(
+        embedding_provider=embedding_provider,
+        config=config or get_cosk_config(),
+        default_db_dir=db_dir,
+    )
+    manager.sync(
+        IndexBuildRequest(
+            name="default",
+            target_dir=target_dir,
+            db_dir=db_dir,
+            incremental=False,
+            config=manager.config,
+        )
+    )
+    return manager.get_context(db_dir=db_dir).vector_store
 
-    vector_store = SkeletonNodeVectorStore(db_dir=db_dir, embedding_provider=embedding_provider)
+
+def _node_graph_id(row: dict[str, object]) -> str:
+    return f"{row['file_path']}:{row['start_line']}"
+
+
+def enrich_search_results(results: list[dict[str, object]]) -> tuple[list[dict[str, object]], list[str]]:
+    warnings: list[str] = []
+    enriched: list[dict[str, object]] = []
+    for row in results:
+        graph_node_id = _node_graph_id(row)
+        token_count, token_warnings = estimate_with_warnings(f"{row.get('raw_signature', '')}\n{row.get('summary', '')}")
+        warnings.extend(token_warnings)
+        enriched.append({**row, "graph_node_id": graph_node_id, "token_count": token_count})
+    return enriched, sorted(set(warnings))
+
+
+def enrich_neighbor_entries(
+    vector_store: SkeletonNodeVectorStore, neighbor_map: dict[str, list[dict[str, object]]]
+) -> tuple[dict[str, list[dict[str, object]]], list[str]]:
+    ids = [entry["node_id"] for entry in (neighbor_map.get("inbound", []) + neighbor_map.get("outbound", []))]
+    details = vector_store.get_node_details(ids)
+    warnings: list[str] = []
+    enriched = {"inbound": [], "outbound": []}
+    for direction in ("inbound", "outbound"):
+        for entry in neighbor_map.get(direction, []):
+            detail = details.get(entry["node_id"], {})
+            text = f"{detail.get('raw_signature', '')}\n{detail.get('summary', '')}"
+            token_count, token_warnings = estimate_with_warnings(text)
+            warnings.extend(token_warnings)
+            enriched[direction].append({**entry, "token_count": token_count})
+    return enriched, sorted(set(warnings))
+
+
+def read_file_range(file_path: str, start_line: int, end_line: int, *, context_target_dir: Path | None = None) -> str:
+    path = Path(file_path)
+    if context_target_dir is not None and not path.is_absolute():
+        path = (context_target_dir / path).resolve()
+    if context_target_dir is not None and path.is_absolute():
+        root = context_target_dir.resolve()
+        if root not in [path, *path.parents]:
+            return f"Unable to read '{file_path}': path is outside indexed root"
     try:
-        nodes = extract_skeleton_nodes(target_dir, config=config)
-        vector_store.rebuild_index(nodes)
-    except SystemExit:
-        raise
+        with open(str(path), "r", encoding="utf-8") as source_file:
+            lines = source_file.readlines()
     except Exception as exc:  # noqa: BLE001
-        raise SystemExit(f"Failed to build index from '{target_dir}': {exc}") from exc
-    return vector_store
+        return f"Unable to read '{file_path}': {exc}"
+    if start_line > len(lines) or end_line > len(lines):
+        return f"Requested line range {start_line}-{end_line} is outside file bounds; file has {len(lines)} lines."
+    return "".join(lines[start_line - 1 : end_line])
 
 
-def create_mcp_server(vector_store: SkeletonNodeVectorStore) -> FastMCP:
+def create_mcp_server(
+    vector_store: SkeletonNodeVectorStore | Any | None = None,
+    *,
+    manager: IndexManager | None = None,
+) -> FastMCP:
     mcp = FastMCP("cosk")
+    config = manager.config if manager else get_cosk_config()
+
+    def _resolve_context(index_name: str | None = None):
+        if manager is not None:
+            return manager.get_context(index_name=index_name)
+        if vector_store is None:
+            raise RuntimeError("No vector store loaded")
+        return None
+
+    def _resolve_store(index_name: str | None = None):
+        context = _resolve_context(index_name)
+        return context.vector_store if context is not None else vector_store
 
     @mcp.tool()
-    def cosk_semantic_search(query_string: str, ctx: Context | None = None) -> str:
+    def cosk_semantic_search(
+        query_string: str,
+        top_k: int | None = None,
+        index_name: str | None = None,
+        ctx: Context | None = None,
+    ) -> str:
         if not query_string or not query_string.strip():
-            raise McpError(
-                mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="query_string must not be blank")
-            )
+            raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="query_string must not be blank"))
         try:
-            results = vector_store.search(query_string.strip(), top_k=5)
-            record_search_origin(ctx, results)
-            return json.dumps(results)
+            resolved_top_k, warnings = resolve_top_k(top_k, config)
+        except TopKValidationError as exc:
+            raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message=str(exc))) from exc
+        try:
+            results = _resolve_store(index_name).search(query_string.strip(), top_k=resolved_top_k)
+            enriched, token_warnings = enrich_search_results(results)
+            record_search_origin(ctx, enriched)
+            if ctx is not None and hasattr(ctx, "info"):
+                for warning in [*warnings, *token_warnings]:
+                    ctx.info(warning)
+            return json.dumps(enriched)
         except McpError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -163,8 +223,14 @@ def create_mcp_server(vector_store: SkeletonNodeVectorStore) -> FastMCP:
                 mcp_types.ErrorData(code=mcp_types.INTERNAL_ERROR, message=f"cosk_semantic_search failed: {exc}")
             ) from exc
 
-    def _core_get_neighbors(node_id: str) -> str:
-        graph = state.get_graph()
+    def _core_get_neighbors(node_id: str, index_name: str | None) -> str:
+        if manager is not None:
+            context = manager.get_context(index_name=index_name)
+            graph = context.graph
+            store = context.vector_store
+        else:
+            graph = state.get_graph()
+            store = vector_store
         if graph is None:
             raise McpError(
                 mcp_types.ErrorData(
@@ -172,14 +238,21 @@ def create_mcp_server(vector_store: SkeletonNodeVectorStore) -> FastMCP:
                     message="cosk_get_neighbors failed: relationship graph is not loaded",
                 )
             )
-        return json.dumps(graph.get_neighbors(node_id))
+        neighbors = graph.get_neighbors(node_id)
+        enriched, _warnings = enrich_neighbor_entries(store, neighbors)
+        return json.dumps(enriched)
 
     @mcp.tool()
-    def cosk_get_neighbors(node_id: str, ctx: Context | None = None) -> str:
+    def cosk_get_neighbors(node_id: str, index_name: str | None = None, ctx: Context | None = None) -> str:
         if not node_id or not node_id.strip():
             raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="node_id must not be blank"))
         try:
-            return safety_wrap_get_neighbors(node_id.strip(), ctx, _core_get_neighbors, state.get_graph())
+            return safety_wrap_get_neighbors(
+                node_id.strip(),
+                ctx,
+                lambda n: _core_get_neighbors(n, index_name),
+                state.get_graph(),
+            )
         except McpError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -189,37 +262,28 @@ def create_mcp_server(vector_store: SkeletonNodeVectorStore) -> FastMCP:
 
     @mcp.tool()
     def cosk_expand_definition(
-        file_path: str, start_line: int, end_line: int, ctx: Context | None = None
+        file_path: str,
+        start_line: int,
+        end_line: int,
+        index_name: str | None = None,
+        ctx: Context | None = None,
     ) -> str:
         if not file_path or not file_path.strip():
             raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="file_path must not be blank"))
         if start_line < 1:
-            raise McpError(
-                mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="start_line must be >= 1")
-            )
+            raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="start_line must be >= 1"))
         if end_line < start_line:
-            raise McpError(
-                mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="end_line must be >= start_line")
-            )
-        try:
-            with open(file_path, "r", encoding="utf-8") as source_file:
-                lines = source_file.readlines()
-        except Exception as exc:  # noqa: BLE001
-            return f"Unable to read '{file_path}': {exc}"
-
-        if start_line > len(lines) or end_line > len(lines):
-            return f"Requested line range {start_line}-{end_line} is outside file bounds; file has {len(lines)} lines."
+            raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="end_line must be >= start_line"))
+        context = manager.get_context(index_name=index_name) if manager is not None else None
         record_expand_definition(ctx)
-        return "".join(lines[start_line - 1 : end_line])
+        return read_file_range(file_path.strip(), start_line, end_line, context_target_dir=context.target_dir if context else None)
 
     @mcp.tool()
-    def cosk_find_usage(entity_name: str) -> str:
+    def cosk_find_usage(entity_name: str, index_name: str | None = None) -> str:
         if not entity_name or not entity_name.strip():
-            raise McpError(
-                mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="entity_name must not be blank")
-            )
+            raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="entity_name must not be blank"))
         try:
-            graph = state.get_graph()
+            graph = manager.get_context(index_name=index_name).graph if manager is not None else state.get_graph()
             if graph is None:
                 raise McpError(
                     mcp_types.ErrorData(
@@ -231,9 +295,7 @@ def create_mcp_server(vector_store: SkeletonNodeVectorStore) -> FastMCP:
         except McpError:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise McpError(
-                mcp_types.ErrorData(code=mcp_types.INTERNAL_ERROR, message=f"cosk_find_usage failed: {exc}")
-            ) from exc
+            raise McpError(mcp_types.ErrorData(code=mcp_types.INTERNAL_ERROR, message=f"cosk_find_usage failed: {exc}")) from exc
 
     return mcp
 
@@ -242,11 +304,24 @@ def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     try:
         embedding_provider = load_embedding_provider()
+        manager = IndexManager(
+            embedding_provider=embedding_provider,
+            config=get_cosk_config(),
+            default_db_dir=args.db_dir,
+        )
         if args.target_dir is not None:
-            vector_store = build_index_from_target(args.target_dir, args.db_dir, embedding_provider)
+            manager.sync(
+                IndexBuildRequest(
+                    name=args.index_name or "default",
+                    target_dir=args.target_dir,
+                    db_dir=args.db_dir,
+                    incremental=False,
+                    config=manager.config,
+                )
+            )
         else:
-            vector_store = validate_and_load_index(args.db_dir, embedding_provider)
-        create_mcp_server(vector_store).run("stdio")
+            manager.get_context(index_name=args.index_name, db_dir=args.db_dir)
+        create_mcp_server(manager=manager).run("stdio")
     except SystemExit:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -255,3 +330,4 @@ def main(argv: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main()
+

@@ -59,4 +59,10 @@ def test_pyproject_declares_cosk_console_script_entrypoint() -> None:
     pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
     pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     scripts = pyproject["project"]["scripts"]
-    assert scripts["cosk"] == "cosk.cli:main"
+    assert scripts["cosk"] == "cosk.cli.main:main"
+
+
+def test_pyproject_declares_cli_package_mapping() -> None:
+    pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    assert "cosk.cli" in pyproject["tool"]["setuptools"]["packages"]

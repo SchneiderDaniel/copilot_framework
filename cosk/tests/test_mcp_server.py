@@ -81,13 +81,27 @@ def test_cosk_semantic_search_serializes_results_as_json_text_array() -> None:
     serialized = tool_fn("query")
     parsed = json.loads(serialized)
     assert isinstance(parsed, list)
-    assert parsed == results
+    assert parsed[0]["node_id"] == results[0]["node_id"]
+    assert "graph_node_id" in parsed[0]
+    assert "token_count" in parsed[0]
 
 
-def test_cosk_semantic_search_limits_top_k_to_5() -> None:
+def test_cosk_semantic_search_defaults_top_k_to_5() -> None:
     tool_fn, store = _tool_fn()
     tool_fn("find me")
     store.search.assert_called_once_with("find me", top_k=5)
+
+
+def test_cosk_semantic_search_accepts_optional_top_k() -> None:
+    tool_fn, store = _tool_fn()
+    tool_fn("find me", top_k=2)
+    store.search.assert_called_once_with("find me", top_k=2)
+
+
+def test_cosk_semantic_search_invalid_top_k_raises_mcp_error() -> None:
+    tool_fn, _ = _tool_fn()
+    with pytest.raises(McpError):
+        tool_fn("find me", top_k=0)
 
 
 def test_cosk_semantic_search_returns_empty_array_for_empty_index() -> None:

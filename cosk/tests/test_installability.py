@@ -80,3 +80,16 @@ def test_console_script_cosk_help_succeeds_after_editable_install() -> None:
     assert "index" in result.stdout
     assert "serve" in result.stdout
     assert "inspect" in result.stdout
+
+
+@pytest.mark.integration
+def test_python_module_cli_entrypoint_works() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "cosk.cli", "--help"],
+        cwd=COSK_DIR,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, f"stdout:\n{result.stdout}\n\nstderr:\n{result.stderr}"
+    assert "search" in result.stdout

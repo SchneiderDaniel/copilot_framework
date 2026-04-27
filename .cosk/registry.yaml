@@ -1,0 +1,7 @@
+version: 1
+default: default
+indexes:
+  default:
+    target_dir: C:/Users/miria/AppData/Local/Temp/pytest-of-miria/pytest-470/test_mcp_server_builds_index_w0/sample
+    db_dir: C:/Users/miria/AppData/Local/Temp/pytest-of-miria/pytest-470/test_mcp_server_builds_index_w0/rebuilt.lancedb
+    last_indexed_at: '2026-04-27T19:02:36.350804+00:00'

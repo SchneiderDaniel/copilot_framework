@@ -146,3 +146,9 @@ extraction:
       grammar_module: language
       query_file: c-sharp.scm
       enabled: true
+retrieval:
+  default_top_k: 5
+  max_top_k: 20
+transport:
+  http_host: 127.0.0.1
+  http_port: 8765

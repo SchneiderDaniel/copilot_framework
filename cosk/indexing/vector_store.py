@@ -197,6 +197,61 @@ class SkeletonNodeVectorStore:
         )
         return len(nodes)
 
+    def delete_by_file_paths(self, file_paths: Sequence[str]) -> int:
+        if not file_paths:
+            return 0
+        db = self._connect()
+        table = self._open_table_if_exists(db)
+        if table is None:
+            return 0
+        quoted = ", ".join(f"'{str(path).replace(chr(39), chr(39) * 2)}'" for path in file_paths)
+        table.delete(f"file_path IN ({quoted})")
+        return len(file_paths)
+
+    def load_all_nodes(self) -> list[SkeletonNode]:
+        db = self._connect()
+        table = self._open_table_if_exists(db)
+        if table is None:
+            return []
+        rows = table.to_arrow().to_pylist()
+        return [
+            SkeletonNode(
+                file_path=str(row["file_path"]),
+                start_line=int(row["start_line"]),
+                end_line=int(row["end_line"]),
+                raw_signature=str(row["raw_signature"]),
+                docstring=str(row["summary"]),
+            )
+            for row in rows
+        ]
+
+    def get_node_details(self, node_ids: Sequence[str]) -> dict[str, dict[str, object]]:
+        if not node_ids:
+            return {}
+        db = self._connect()
+        table = self._open_table_if_exists(db)
+        if table is None:
+            return {}
+        requested = set(node_ids)
+        details: dict[str, dict[str, object]] = {}
+        for row in table.to_arrow().to_pylist():
+            db_node_id = str(row["node_id"])
+            graph_node_id = f"{row['file_path']}:{row['start_line']}"
+            payload = {
+                "node_id": db_node_id,
+                "graph_node_id": graph_node_id,
+                "file_path": str(row["file_path"]),
+                "start_line": int(row["start_line"]),
+                "end_line": int(row["end_line"]),
+                "raw_signature": str(row["raw_signature"]),
+                "summary": str(row["summary"]),
+            }
+            if db_node_id in requested:
+                details[db_node_id] = payload
+            if graph_node_id in requested:
+                details[graph_node_id] = payload
+        return details
+
     def search(self, query: str, top_k: int = 5) -> list[SkeletonNodeSearchResult]:
         if not query or not query.strip():
             raise ValueError("query must not be empty")
