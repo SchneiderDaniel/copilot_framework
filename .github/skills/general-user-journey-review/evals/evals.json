@@ -1,0 +1,23 @@
+{
+  "skill_name": "general-user-journey-review",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Do a user journey review of the caveman skill in this repo. I want to know if the install and first-use experience is Apple-level smooth. Walk through it as a developer who's never heard of it before.",
+      "expected_output": "A full Markdown UX review report with: persona (first-time developer), journey map table, heuristic scorecard, anti-patterns detected, developer tickets (e.g. UX-01, UX-02), recommendations roadmap, and Apple UX score. The agent should actually run `npx` or inspect the caveman install flow, not describe it theoretically.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Review the user journey for the Sudoku web app at sudoku.planhead.localhost. I'm thinking about it from the perspective of a casual player who just found it via Google. Is it obvious how to start playing? Does anything feel confusing? Give me the full report.",
+      "expected_output": "A full UX review with persona (casual gamer, non-technical), playwright-driven or CLI-assisted journey simulation, friction hotspots in the game start flow, anti-patterns (e.g. missing feedback, unclear labels), heuristic scorecard, and developer tickets with mitigations. Should ask about creating a GitHub issue at the end.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "I want a user journey review for the forestrag project. Think of the user as a data scientist who wants to quickly try out RAG on their own files. What's the onboarding like? Is it zero-docs or does it require extensive reading?",
+      "expected_output": "A UX review covering the onboarding/installation experience. Since ForestRAG is early-stage, the agent should walk through README, detect gaps (missing quickstart, unclear CLI, no example data), compute an Apple UX Score that likely reflects the early-stage quality, and produce actionable developer tickets for the onboarding experience.",
+      "files": []
+    }
+  ]
+}
