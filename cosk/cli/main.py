@@ -8,6 +8,7 @@ import sys
 
 from cosk import inspect
 from cosk.cli.output import RichIndexProgressObserver, write_error, write_info, write_json
+from cosk.cli.setup_wizard import run_setup_wizard, run_uninstall_wizard
 from cosk.config import CoskConfig, TopKValidationError, get_cosk_config, resolve_top_k
 from cosk.http_server import run_http_server
 from cosk.index_manager import IndexManager
@@ -102,6 +103,32 @@ def build_parser() -> argparse.ArgumentParser:
     registry_default = registry_subparsers.add_parser("set-default", help="Set registry default index")
     registry_default.add_argument("--name", required=True)
     registry_default.set_defaults(handler=_run_registry_set_default)
+
+    install_parser = subparsers.add_parser(
+        "install",
+        help="Index a repo and auto-configure MCP clients (one-shot onboarding)",
+        description=(
+            "Index a repository and automatically inject the cosk MCP server entry into\n"
+            "any detected AI client configs (Claude Desktop, VS Code, Cursor, Windsurf, Zed).\n"
+            "Prints a ready-to-paste snippet for CLAUDE.md / agents.md / copilot instructions."
+        ),
+    )
+    install_parser.add_argument("--target-dir", type=Path, default=None, help="Repository to index.")
+    install_parser.add_argument("--db-dir", type=Path, default=None, help="Override LanceDB directory path.")
+    install_parser.add_argument("--name", type=str, default=None, help="Optional registry name for this index.")
+    install_parser.add_argument("--no-gitignore", action="store_true", help="Include files normally ignored by .gitignore.")
+    install_parser.add_argument("--skip-index", action="store_true", help="Skip indexing; only configure MCP clients.")
+    install_parser.set_defaults(handler=_run_setup)
+
+    uninstall_parser = subparsers.add_parser(
+        "uninstall",
+        help="Remove cosk MCP server entry from all detected AI client configs",
+        description=(
+            "Scan for known AI client config files (Claude Desktop, VS Code, Cursor, Windsurf, Zed)\n"
+            "and remove the 'cosk' MCP server entry from each one found."
+        ),
+    )
+    uninstall_parser.set_defaults(handler=_run_uninstall)
 
     return parser
 
@@ -249,6 +276,45 @@ def _run_registry_remove(args: argparse.Namespace) -> int:
 def _run_registry_set_default(args: argparse.Namespace) -> int:
     registry = set_default_index(args.name)
     write_json({"default": registry.default})
+    return 0
+
+
+def _run_setup(args: argparse.Namespace) -> int:
+    if not args.skip_index:
+        if args.target_dir is None:
+            raise ValueError("--target-dir is required unless --skip-index is set")
+        config = _apply_no_gitignore(get_cosk_config(), args)
+        manager = _make_manager(args, config)
+        observer = RichIndexProgressObserver() if _is_interactive_terminal() else None
+        manager.sync(
+            IndexBuildRequest(
+                name=args.name,
+                target_dir=args.target_dir,
+                db_dir=args.db_dir,
+                incremental=False,
+                config=config,
+            ),
+            progress_observer=observer,
+        )
+
+    if args.db_dir is not None:
+        db_dir = str(args.db_dir.resolve())
+    elif args.target_dir is not None:
+        db_dir = str((args.target_dir / ".lancedb").resolve())
+    else:
+        db_dir = str(server.DEFAULT_DB_DIR.resolve())
+
+    cosk_cwd = str(Path(__file__).resolve().parents[1])
+    run_setup_wizard(
+        python_exe=sys.executable,
+        cosk_cwd=cosk_cwd,
+        db_dir=db_dir,
+    )
+    return 0
+
+
+def _run_uninstall(args: argparse.Namespace) -> int:  # noqa: ARG001
+    run_uninstall_wizard()
     return 0
 
 

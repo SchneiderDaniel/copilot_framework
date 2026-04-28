@@ -66,8 +66,38 @@ cosk index --target-dir C:\path\to\repo --no-gitignore
 
 ## Quick Start
 
+### One-shot setup (recommended)
+
+Run a single command to index your repo **and** auto-configure all detected AI clients
+(Claude Desktop, VS Code Copilot, Cursor, Windsurf, Zed):
+
+```bash
+cosk install --target-dir C:\path\to\repo
+```
+
+Cosk will:
+1. Index the repository.
+2. Detect and patch MCP config files for any installed AI client.
+3. Print a ready-to-paste snippet for `CLAUDE.md` / `agents.md` / copilot instructions.
+
+Already indexed? Skip the index step and just configure clients:
+
+```bash
+cosk install --target-dir C:\path\to\repo --skip-index
+```
+
+To remove cosk from all detected AI client configs:
+
+```bash
+cosk uninstall
+```
+
+### Command reference
+
 | Command | Description |
 | --- | --- |
+| `cosk install --target-dir <repo>` | **One-shot onboarding** — index + configure all AI clients. |
+| `cosk uninstall` | Remove cosk MCP entry from all detected AI client configs. |
 | `cosk index --target-dir <repo>` | Build the index from source code. |
 | `cosk serve --db-dir <repo>/.lancedb` | Start the MCP stdio server for your client. |
 | `cosk search --query "<text>" --db-dir <repo>/.lancedb` | Run a semantic search from the CLI. |

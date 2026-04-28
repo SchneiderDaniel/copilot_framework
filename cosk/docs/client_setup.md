@@ -1,5 +1,25 @@
 # MCP Client Setup for Cosk
 
+## TL;DR — one command
+
+```bash
+cosk install --target-dir C:\path\to\repo
+```
+
+This indexes your repo **and** automatically patches the config for any detected AI client
+(Claude Desktop, VS Code Copilot, Cursor, Windsurf, Zed). It also prints a ready-to-paste
+snippet for `CLAUDE.md` / `agents.md` / copilot instructions.
+
+To remove cosk from all detected client configs:
+
+```bash
+cosk uninstall
+```
+
+If your client is not auto-detected, follow the manual steps below.
+
+---
+
 ## Prerequisites
 
 - Cosk installed (`python -m pip install -e .` from `cosk/`)
