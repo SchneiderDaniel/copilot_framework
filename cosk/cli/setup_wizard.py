@@ -241,9 +241,6 @@ def run_setup_wizard(python_exe: str, cosk_cwd: str, db_dir: str) -> None:
     """Detect AI clients, patch their configs, and print the agent instruction snippet."""
     detected = detect_clients()
 
-    write_info("")
-    _sep("CLIENT CONFIG")
-
     if not detected:
         write_info(_manual_guide(python_exe, cosk_cwd, db_dir))
     else:

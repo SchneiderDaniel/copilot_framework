@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from time import perf_counter
@@ -114,6 +115,19 @@ def _run_extraction(
     return nodes, issues
 
 
+def _make_embed_callback(observer: IndexProgressObserver | None) -> Callable[[int, int], None] | None:
+    """Build an embedding progress callback if the observer supports it."""
+    if observer is None or not hasattr(observer, "embed_start") or not hasattr(observer, "embed_advance"):
+        return None
+
+    def callback(current: int, total: int) -> None:
+        if current == 1:
+            observer.embed_start(total)  # type: ignore[union-attr]
+        observer.embed_advance(current, total)  # type: ignore[union-attr]
+
+    return callback
+
+
 def _full_sync(
     request: IndexBuildRequest,
     vector_store: SkeletonNodeVectorStore,
@@ -129,7 +143,7 @@ def _full_sync(
     if progress_observer is not None:
         progress_observer.start(mode, len(supported_files), 0)
     nodes, issues = _run_extraction(files=supported_files, config=config, observer=progress_observer)
-    vector_store.rebuild_index(nodes)
+    vector_store.rebuild_index(nodes, on_node_embedded=_make_embed_callback(progress_observer))
     rebuild(nodes)
     current_snapshot = snapshot_files(request.target_dir, config)
     manifest = build_manifest(request.target_dir, config, current_snapshot)
@@ -237,7 +251,7 @@ def sync_index(
         observer=progress_observer,
     )
     if nodes_to_upsert:
-        vector_store.upsert_nodes(nodes_to_upsert)
+        vector_store.upsert_nodes(nodes_to_upsert, on_node_embedded=_make_embed_callback(progress_observer))
 
     current_nodes = vector_store.load_all_nodes()
     rebuild(current_nodes)

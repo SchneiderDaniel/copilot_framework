@@ -52,18 +52,26 @@ class RichIndexProgressObserver(IndexProgressObserver):
         self._task_id: int | None = None
 
     def start(self, mode: str, total_files: int, deleted_files: int = 0) -> None:
-        total = max(total_files, 1)
-        self._progress.start()
         suffix = f", {deleted_files} files scheduled for deletion" if deleted_files else ""
-        self._task_id = self._progress.add_task(f"Indexing ({mode}){suffix}", total=total)
+        label = f"Step 1/3  Scanning ({mode}){suffix}"
+        self._progress.start()
+        self._task_id = self._progress.add_task(label, total=max(total_files, 1))
 
     def advance(self, file_path: Path, extracted_nodes: int, skipped: bool = False) -> None:  # noqa: ARG002
         if self._task_id is None:
             return
-        description = f"Indexing {file_path.name}"
-        if skipped:
-            description = f"Skipping {file_path.name}"
+        description = f"Step 1/3  {'Skipping' if skipped else 'Scanning'}  {file_path.name}"
         self._progress.update(self._task_id, advance=1, description=description)
+
+    def embed_start(self, total_nodes: int) -> None:
+        if self._task_id is None:
+            return
+        self._progress.reset(self._task_id, total=total_nodes, description="Step 2/3  Embedding nodes…")
+
+    def embed_advance(self, current: int, total: int) -> None:  # noqa: ARG002
+        if self._task_id is None:
+            return
+        self._progress.update(self._task_id, completed=current)
 
     def record_issue(self, issue: IndexIssue) -> None:  # noqa: ARG002
         return
@@ -72,7 +80,7 @@ class RichIndexProgressObserver(IndexProgressObserver):
         if self._task_id is not None:
             self._progress.stop()
         write_info(
-            f"Indexing complete: {result.processed_files} files processed, {result.indexed_nodes} nodes indexed in {elapsed_seconds:.1f}s."
+            f"  Step 3/3  Done — {result.processed_files} files, {result.indexed_nodes} nodes in {elapsed_seconds:.1f}s."
         )
         if result.skipped_files:
             summary = format_issue_summary(issue_summary)

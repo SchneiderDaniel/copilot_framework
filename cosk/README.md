@@ -75,6 +75,13 @@ Run a single command to index your repo **and** auto-configure all detected AI c
 cosk install --target-dir C:\path\to\repo
 ```
 
+Running from inside the repo you want to index? Use `..` to target the parent folder:
+
+```bash
+cd C:\path\to\repo\cosk
+cosk install --target-dir ..
+```
+
 Cosk will:
 1. Index the repository.
 2. Detect and patch MCP config files for any installed AI client.

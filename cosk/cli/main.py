@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import warnings
+
+warnings.filterwarnings("ignore", category=UserWarning, module="pydantic")
+
 from dataclasses import asdict, replace
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -278,14 +282,18 @@ def _run_registry_set_default(args: argparse.Namespace) -> int:
     write_json({"default": registry.default})
     return 0
 
-
 def _run_setup(args: argparse.Namespace) -> int:
+    write_info("─" * 60)
+    write_info("  cosk install  (1/2)  Indexing")
+    write_info("─" * 60)
     if not args.skip_index:
         if args.target_dir is None:
             raise ValueError("--target-dir is required unless --skip-index is set")
+        write_info(f"  Target: {args.target_dir.resolve()}")
+        write_info("  Step 1/3  Scanning files…")
         config = _apply_no_gitignore(get_cosk_config(), args)
         manager = _make_manager(args, config)
-        observer = RichIndexProgressObserver() if _is_interactive_terminal() else None
+        observer = RichIndexProgressObserver() if sys.stderr.isatty() else None
         manager.sync(
             IndexBuildRequest(
                 name=args.name,
@@ -296,6 +304,13 @@ def _run_setup(args: argparse.Namespace) -> int:
             ),
             progress_observer=observer,
         )
+    else:
+        write_info("  Skipped (--skip-index).")
+
+    write_info("")
+    write_info("─" * 60)
+    write_info("  cosk install  (2/2)  Configuring AI clients")
+    write_info("─" * 60)
 
     if args.db_dir is not None:
         db_dir = str(args.db_dir.resolve())
@@ -310,6 +325,9 @@ def _run_setup(args: argparse.Namespace) -> int:
         cosk_cwd=cosk_cwd,
         db_dir=db_dir,
     )
+    write_info("  cosk install — done ✓")
+    write_info("─" * 60)
+
     return 0
 
 

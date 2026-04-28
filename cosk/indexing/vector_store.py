@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TypedDict
 
@@ -112,12 +112,18 @@ class SkeletonNodeVectorStore:
         except Exception:  # noqa: BLE001
             return False
 
-    def rebuild_index(self, nodes: Sequence[SkeletonNode]) -> None:
+    def rebuild_index(
+        self,
+        nodes: Sequence[SkeletonNode],
+        *,
+        on_node_embedded: Callable[[int, int], None] | None = None,
+    ) -> None:
         rows: list[dict[str, object]] = []
         vector_dim: int | None = None
 
         if nodes:
-            for node in nodes:
+            total = len(nodes)
+            for i, node in enumerate(nodes, 1):
                 vector = self._embedding_provider.embed(build_node_embedding_text(node))
                 if not vector:
                     raise ValueError("embedding vector must not be empty")
@@ -126,6 +132,8 @@ class SkeletonNodeVectorStore:
                 if len(vector) != vector_dim:
                     raise ValueError("embedding vector dimension mismatch across nodes")
                 rows.append(self._build_row(node, vector))
+                if on_node_embedded is not None:
+                    on_node_embedded(i, total)
         else:
             probe_vector = self._embedding_provider.embed("cosk-empty-index-probe")
             if not probe_vector:
@@ -151,13 +159,19 @@ class SkeletonNodeVectorStore:
         if not self.validate_index():
             raise RuntimeError("index rebuild failed validation")
 
-    def upsert_nodes(self, nodes: Sequence[SkeletonNode]) -> int:
+    def upsert_nodes(
+        self,
+        nodes: Sequence[SkeletonNode],
+        *,
+        on_node_embedded: Callable[[int, int], None] | None = None,
+    ) -> int:
         if not nodes:
             return 0
 
         rows: list[dict[str, object]] = []
         first_vector_dim: int | None = None
-        for node in nodes:
+        total = len(nodes)
+        for i, node in enumerate(nodes, 1):
             vector = self._embedding_provider.embed(build_node_embedding_text(node))
             if first_vector_dim is None:
                 first_vector_dim = len(vector)
@@ -166,6 +180,8 @@ class SkeletonNodeVectorStore:
             if len(vector) != first_vector_dim:
                 raise ValueError("embedding vector dimension mismatch across nodes")
             rows.append(self._build_row(node, vector))
+            if on_node_embedded is not None:
+                on_node_embedded(i, total)
 
         if self._vector_dim is None and first_vector_dim is not None:
             self._vector_dim = first_vector_dim
