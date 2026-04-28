@@ -101,6 +101,40 @@ Use this generic server definition shape:
 }
 ```
 
+## GitHub Copilot CLI
+
+> ⚠️ **`cosk install` does not auto-detect GitHub Copilot CLI.** Manual setup is required.
+
+GitHub Copilot CLI reads MCP server config from **`~/.copilot/mcp-config.json`** (user-level).
+A project-level `.copilot/mcp-config.json` file is **ignored** — the tools will not appear.
+
+The config location can be changed by setting the `COPILOT_HOME` environment variable.
+
+**Steps:**
+
+1. Open (or create) `~/.copilot/mcp-config.json`.
+2. Add the cosk entry:
+
+```json
+{
+  "mcpServers": {
+    "cosk": {
+      "command": "C:/path/to/.venv/Scripts/python.exe",
+      "args": [
+        "-m", "cosk.mcp.server",
+        "--db-dir", "C:/path/to/repo/.lancedb"
+      ],
+      "cwd": "C:/path/to/cosk"
+    }
+  }
+}
+```
+
+3. **Fully restart** the Copilot CLI (start a new session — do not resume an old one).
+4. Verify with `/env` in the CLI — cosk should appear under MCP servers.
+
+---
+
 ## Verification
 
 1. Restart your MCP client.

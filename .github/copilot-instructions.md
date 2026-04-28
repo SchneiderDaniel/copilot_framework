@@ -20,8 +20,12 @@ navigation over the indexed codebase.
 
 ### Tool preference (mandatory)
 
-**Do not use grep, find, or direct file reads for codebase navigation.**
-Always use the cosk MCP tools below instead.
+Choose the right tool based on query type — do **not** default to grep for everything, but do **not** use cosk as a substitute for grep either:
+
+- **Concept / semantic queries** ("find code related to X", "how is Y implemented") → use cosk tools
+- **Exact name / substring / pattern matching** ("find all symbols containing string X") → use **grep**
+
+**Do not use `cosk_semantic_search` for exact name lookups** — it is a vector similarity search, not a name filter. For name-pattern searches, grep is more precise and token-efficient.
 
 ### When to use
 - **Finding relevant code**: use `cosk_semantic_search` for concept-level queries.

@@ -170,6 +170,10 @@ cosk index --target-dir C:\path\to\repo
 
 If your client was not auto-configured by `cosk install`, add an entry manually.
 
+> ⚠️ **GitHub Copilot CLI users:** The config file must be placed at **`~/.copilot/mcp-config.json`**.
+> A project-level `.copilot/mcp-config.json` is not read by the CLI and the tools will not appear.
+> See [`docs/client_setup.md`](docs/client_setup.md) for the full Copilot CLI setup guide.
+
 Example Claude Desktop-style config:
 
 ```json
@@ -188,6 +192,24 @@ See full per-client guide: [`docs/client_setup.md`](docs/client_setup.md)
 
 ---
 
+## When to use cosk vs grep
+
+Choose based on the nature of your question:
+
+| Question type | Right tool | Example |
+|---|---|---|
+| "How does X work?" | `cosk_semantic_search` | *"How does cosk handle retries when the Gemini API fails?"* |
+| "Where is concept Y implemented?" | `cosk_semantic_search` | *"Where is the dependency graph built during indexing?"* |
+| "What depends on / calls Z?" | `cosk_get_neighbors` | *"What does `GeminiEmbeddingProvider` depend on?"* |
+| "Where is symbol Z used?" | `cosk_find_usage` | *"Where is `SkeletonNode` referenced across the codebase?"* |
+| "Show me the full body of function Z" | `cosk_expand_definition` | *"What exactly does `GeminiEmbeddingProvider.embed` do?"* |
+| "Find all symbols whose name contains string X" | **grep** | *"Find all functions with the word 'embed' in their name"* |
+| "Which files contain literal string X?" | **grep** | *"Which files contain the string 'lancedb'"* |
+
+The clearest signal for cosk is when the question is about **how**, **why**, or **what depends on what**. The clearest signal for grep is when you are matching a literal name or string pattern.
+
+---
+
 ## MCP Tool Reference
 
 ### `cosk_semantic_search`
@@ -195,6 +217,7 @@ See full per-client guide: [`docs/client_setup.md`](docs/client_setup.md)
 - Purpose: semantic retrieval of indexed nodes.
 - Input: `{ "query_string": "string (required, non-blank)" }`
 - Output: JSON array — `node_id`, `file_path`, `start_line`, `end_line`, `raw_signature`, `summary`
+- **When NOT to use**: do not use this for exact name/substring lookups (e.g. "find all functions containing the word X"). It is a vector similarity search, not a name filter — use **grep** for pattern matching instead.
 
 ```json
 { "query_string": "authenticate user" }

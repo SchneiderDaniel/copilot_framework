@@ -8,6 +8,8 @@
 **/.venv/
 .lancedb/
 
+.cosk
+
 __pycache__/
 
 **.playwright-cli/
