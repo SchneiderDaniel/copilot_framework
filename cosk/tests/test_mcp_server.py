@@ -18,6 +18,7 @@ from cosk.safety import middleware
 def _tool_fn(search_results: list[dict[str, object]] | None = None):
     store = Mock()
     store.search.return_value = [] if search_results is None else search_results
+    store.search_by_name.return_value = []
     mcp = create_mcp_server(store)
     tool = mcp._tool_manager.get_tool("cosk_semantic_search")  # noqa: SLF001
     return tool.fn, store
@@ -26,11 +27,15 @@ def _tool_fn(search_results: list[dict[str, object]] | None = None):
 def _tool_functions():
     store = Mock()
     store.search.return_value = []
+    store.search_by_name.return_value = []
+    store.get_node_details.return_value = {}
     mcp = create_mcp_server(store)
     return {
+        "store": store,
+        "search_by_name": mcp._tool_manager.get_tool("cosk_search_by_name").fn,  # noqa: SLF001
         "semantic_search": mcp._tool_manager.get_tool("cosk_semantic_search").fn,  # noqa: SLF001
         "get_neighbors": mcp._tool_manager.get_tool("cosk_get_neighbors").fn,  # noqa: SLF001
-        "expand_definition": mcp._tool_manager.get_tool("cosk_expand_definition").fn,  # noqa: SLF001
+        "get_symbol_source": mcp._tool_manager.get_tool("cosk_get_symbol_source").fn,  # noqa: SLF001
         "find_usage": mcp._tool_manager.get_tool("cosk_find_usage").fn,  # noqa: SLF001
     }
 
@@ -113,11 +118,21 @@ def test_cosk_semantic_search_returns_empty_array_for_empty_index() -> None:
 def test_create_mcp_server_registers_all_tools() -> None:
     store = Mock()
     store.search.return_value = []
+    store.search_by_name.return_value = []
     mcp = create_mcp_server(store)
+    assert mcp._tool_manager.get_tool("cosk_search_by_name") is not None  # noqa: SLF001
     assert mcp._tool_manager.get_tool("cosk_semantic_search") is not None  # noqa: SLF001
     assert mcp._tool_manager.get_tool("cosk_get_neighbors") is not None  # noqa: SLF001
-    assert mcp._tool_manager.get_tool("cosk_expand_definition") is not None  # noqa: SLF001
+    assert mcp._tool_manager.get_tool("cosk_get_symbol_source") is not None  # noqa: SLF001
     assert mcp._tool_manager.get_tool("cosk_find_usage") is not None  # noqa: SLF001
+
+
+def test_create_mcp_server_registers_cosk_search_by_name() -> None:
+    store = Mock()
+    store.search.return_value = []
+    store.search_by_name.return_value = []
+    mcp = create_mcp_server(store)
+    assert mcp._tool_manager.get_tool("cosk_search_by_name") is not None  # noqa: SLF001
 
 
 def test_cosk_semantic_search_behavior_unchanged_with_optional_ctx_parameter() -> None:
@@ -338,68 +353,113 @@ def test_cosk_find_usage_wraps_runtime_failures_as_internal_mcp_error(monkeypatc
         _tool_functions()["find_usage"]("foo")
 
 
-@pytest.mark.parametrize("file_path", ["", "   "])
-def test_cosk_expand_definition_rejects_blank_file_path_as_mcp_tool_error(file_path: str) -> None:
-    with pytest.raises(McpError):
-        _tool_functions()["expand_definition"](file_path, 1, 1)
-
-
-@pytest.mark.parametrize(("start_line", "end_line"), [(0, 1), (-1, 1), (3, 2)])
-def test_cosk_expand_definition_rejects_invalid_line_ranges_as_mcp_tool_error(start_line: int, end_line: int) -> None:
-    with pytest.raises(McpError):
-        _tool_functions()["expand_definition"]("dummy.py", start_line, end_line)
-
-
-def test_cosk_expand_definition_returns_inclusive_raw_source_range(tmp_path: Path) -> None:
+def test_cosk_get_symbol_source_returns_exact_inclusive_source_for_known_node_id(tmp_path: Path) -> None:
     source_file = tmp_path / "sample.py"
     lines = ["line 1\n", "line 2\n", "line 3\n", "line 4\n", "line 5\n"]
     source_file.write_text("".join(lines), encoding="utf-8")
-    result = _tool_functions()["expand_definition"](str(source_file), 2, 4)
-    assert result == "".join(lines[1:4])
+    tools = _tool_functions()
+    tools["store"].get_node_details.return_value = {
+        "known": {
+            "file_path": str(source_file),
+            "start_line": 2,
+            "end_line": 4,
+            "raw_signature": "def known():",
+        }
+    }
+    payload = json.loads(tools["get_symbol_source"](["known"]))
+    assert len(payload) == 1
+    assert payload[0]["node_id"] == "known"
+    assert payload[0]["file_path"] == str(source_file)
+    assert payload[0]["start_line"] == 2
+    assert payload[0]["end_line"] == 4
+    assert payload[0]["raw_signature"] == "def known():"
+    assert payload[0]["source_code"] == "".join(lines[1:4])
+    assert "token_count" in payload[0]
 
 
-def test_cosk_expand_definition_returns_descriptive_string_for_missing_file(tmp_path: Path) -> None:
-    missing_file = tmp_path / "missing.py"
-    result = _tool_functions()["expand_definition"](str(missing_file), 1, 2)
-    assert isinstance(result, str)
-    assert str(missing_file) in result
-
-
-def test_cosk_expand_definition_returns_descriptive_string_for_out_of_range_request(tmp_path: Path) -> None:
+def test_cosk_get_symbol_source_returns_not_found_and_continues_batch(tmp_path: Path) -> None:
     source_file = tmp_path / "sample.py"
-    source_file.write_text("a\nb\n", encoding="utf-8")
-    result = _tool_functions()["expand_definition"](str(source_file), 2, 5)
-    assert result == "Requested line range 2-5 is outside file bounds; file has 2 lines."
+    source_file.write_text("alpha\nbeta\n", encoding="utf-8")
+    tools = _tool_functions()
+    tools["store"].get_node_details.return_value = {
+        "known": {"file_path": str(source_file), "start_line": 1, "end_line": 1, "raw_signature": "def known():"}
+    }
+    payload = json.loads(tools["get_symbol_source"](["known", "missing"]))
+    assert payload[0]["node_id"] == "known"
+    assert payload[0]["source_code"] == "alpha\n"
+    assert payload[1] == {"node_id": "missing", "error": "not found"}
 
 
-def test_cosk_expand_definition_behavior_unchanged_with_optional_ctx_parameter(tmp_path: Path) -> None:
+def test_cosk_get_symbol_source_returns_sandbox_error_for_outside_root(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    outside_file = tmp_path / "outside.py"
+    outside_file.write_text("print('x')\n", encoding="utf-8")
+    store = Mock()
+    store.search.return_value = []
+    store.search_by_name.return_value = []
+    store.get_node_details.return_value = {
+        "outside": {
+            "file_path": str(outside_file),
+            "start_line": 1,
+            "end_line": 1,
+            "raw_signature": "print('x')",
+        }
+    }
+
+    class _Manager:
+        config = None
+
+        def get_context(self, *, index_name: str | None = None, db_dir: Path | None = None):  # noqa: ARG002
+            return Mock(vector_store=store, target_dir=root, manifest=None, graph=None)
+
+    mcp = create_mcp_server(manager=_Manager())
+    get_symbol_source = mcp._tool_manager.get_tool("cosk_get_symbol_source").fn  # noqa: SLF001
+    payload = json.loads(get_symbol_source(["outside"]))
+    assert payload == [{"node_id": "outside", "error": "path is outside indexed root"}]
+
+
+def test_cosk_get_symbol_source_rejects_empty_node_ids_with_invalid_params() -> None:
+    with pytest.raises(McpError):
+        _tool_functions()["get_symbol_source"]([])
+
+
+def test_cosk_get_symbol_source_rejects_non_list_node_ids_with_invalid_params() -> None:
+    with pytest.raises(McpError):
+        _tool_functions()["get_symbol_source"]("not-a-list")
+
+
+def test_cosk_get_symbol_source_preserves_input_order_and_duplicates(tmp_path: Path) -> None:
+    source_a = tmp_path / "a.py"
+    source_b = tmp_path / "b.py"
+    source_a.write_text("a1\na2\n", encoding="utf-8")
+    source_b.write_text("b1\nb2\n", encoding="utf-8")
+    tools = _tool_functions()
+    tools["store"].get_node_details.return_value = {
+        "id_a": {"file_path": str(source_a), "start_line": 1, "end_line": 1, "raw_signature": "def a():"},
+        "id_b": {"file_path": str(source_b), "start_line": 2, "end_line": 2, "raw_signature": "def b():"},
+    }
+    payload = json.loads(tools["get_symbol_source"](["id_a", "missing", "id_a", "id_b"]))
+    assert [entry["node_id"] for entry in payload] == ["id_a", "missing", "id_a", "id_b"]
+    assert payload[1] == {"node_id": "missing", "error": "not found"}
+
+
+def test_cosk_get_symbol_source_calls_get_node_details_once_per_request(tmp_path: Path) -> None:
     source_file = tmp_path / "sample.py"
-    source_file.write_text("line 1\nline 2\n", encoding="utf-8")
-    result = _tool_functions()["expand_definition"](str(source_file), 1, 2, ctx=None)
-    assert result == "line 1\nline 2\n"
+    source_file.write_text("alpha\n", encoding="utf-8")
+    tools = _tool_functions()
+    tools["store"].get_node_details.return_value = {
+        "known": {"file_path": str(source_file), "start_line": 1, "end_line": 1, "raw_signature": "def known():"}
+    }
+    json.loads(tools["get_symbol_source"](["known", "missing"]))
+    tools["store"].get_node_details.assert_called_once_with(["known", "missing"])
 
 
-def test_cosk_expand_definition_uses_builtin_open_for_file_reading(monkeypatch: pytest.MonkeyPatch) -> None:
-    opened_paths: list[str] = []
-
-    class _FakeFile:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):  # noqa: ANN001
-            return False
-
-        def readlines(self):
-            return ["alpha\n", "beta\n", "gamma\n"]
-
-    def _open_spy(path: str, mode: str = "r", encoding: str | None = None):  # noqa: ARG001
-        opened_paths.append(path)
-        return _FakeFile()
-
-    monkeypatch.setattr("builtins.open", _open_spy)
-    result = _tool_functions()["expand_definition"]("spy-path.py", 1, 2)
-    assert opened_paths == ["spy-path.py"]
-    assert result == "alpha\nbeta\n"
+def test_cosk_get_symbol_source_returns_error_for_incomplete_metadata() -> None:
+    tools = _tool_functions()
+    tools["store"].get_node_details.return_value = {"broken": {"file_path": "x.py", "start_line": 1}}
+    payload = json.loads(tools["get_symbol_source"](["broken"]))
+    assert payload == [{"node_id": "broken", "error": "metadata is incomplete"}]
 
 
 def test_cosk_find_usage_behavior_unchanged_with_middleware_present() -> None:

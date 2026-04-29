@@ -37,15 +37,16 @@ def test_readme_contains_required_sections() -> None:
 def test_readme_documents_all_tools_with_input_output_example_and_errors() -> None:
     text = _readme()
     for tool_name in (
+        "cosk_search_by_name",
         "cosk_semantic_search",
         "cosk_get_neighbors",
-        "cosk_expand_definition",
+        "cosk_get_symbol_source",
         "cosk_find_usage",
     ):
         assert tool_name in text
-    assert text.lower().count("- input:") >= 4
-    assert text.lower().count("- output:") >= 4
-    assert text.lower().count("errors:") >= 4
+    assert text.lower().count("- input:") >= 5
+    assert text.lower().count("- output:") >= 5
+    assert text.lower().count("errors:") >= 5
 
 
 def test_readme_accuracy_for_error_behavior_and_top_k() -> None:
@@ -61,7 +62,7 @@ def test_guardrails_section_is_present() -> None:
     assert "## Safety & Guardrails" in text
     assert "cycle" in text.lower()
     assert "depth limit" in text.lower()
-    assert "record_expand_definition" in text
+    assert "record_source_retrieval" in text
 
 
 def test_client_setup_doc_exists_and_contains_steps_and_troubleshooting() -> None:
@@ -144,3 +145,15 @@ def test_readme_documents_cross_platform_venv_steps() -> None:
     assert "python -m venv .venv" in text
     assert ".venv\\Scripts\\activate" in text
     assert "source .venv/bin/activate" in text
+
+
+def test_readme_when_to_use_cosk_vs_grep_references_cosk_search_by_name() -> None:
+    text = _readme()
+    assert "## When to use cosk vs grep" in text
+    assert "| Symbol by name / substring / regex | `cosk_search_by_name` |" in text
+
+
+def test_readme_keeps_grep_limited_to_literal_file_content_search() -> None:
+    text = _readme()
+    assert "| Literal string in any file | `grep` |" in text
+    assert "Never use grep for code exploration. grep is only allowed for searching literal strings in file content." in text

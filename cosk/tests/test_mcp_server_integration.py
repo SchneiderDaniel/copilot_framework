@@ -125,7 +125,7 @@ def tool_functions() -> dict[str, Any]:
     return {
         "semantic_search": mcp._tool_manager.get_tool("cosk_semantic_search").fn,  # noqa: SLF001
         "get_neighbors": mcp._tool_manager.get_tool("cosk_get_neighbors").fn,  # noqa: SLF001
-        "expand_definition": mcp._tool_manager.get_tool("cosk_expand_definition").fn,  # noqa: SLF001
+        "get_symbol_source": mcp._tool_manager.get_tool("cosk_get_symbol_source").fn,  # noqa: SLF001
         "find_usage": mcp._tool_manager.get_tool("cosk_find_usage").fn,  # noqa: SLF001
         "store": store,
     }
@@ -190,7 +190,8 @@ def test_tools_list_contains_cosk_semantic_search(prebuilt_index_dir: Path) -> N
 def test_tools_list_contains_all_tools(prebuilt_index_dir: Path) -> None:
     tools = _run_mcp_session(["--db-dir", str(prebuilt_index_dir)], lambda session: session.list_tools())
     names = {tool.name for tool in tools.tools}
-    assert {"cosk_semantic_search", "cosk_get_neighbors", "cosk_expand_definition", "cosk_find_usage"} <= names
+    assert {"cosk_semantic_search", "cosk_get_neighbors", "cosk_get_symbol_source", "cosk_find_usage"} <= names
+    assert "cosk_expand_definition" not in names
 
 
 def test_cosk_semantic_search_happy_path_returns_required_json_fields(prebuilt_index_dir: Path) -> None:
@@ -258,68 +259,45 @@ def test_cosk_semantic_search_empty_index_returns_empty_array(empty_valid_index_
     assert json.loads(_tool_text_payload(result)) == []
 
 
-def test_cosk_expand_definition_happy_path_returns_inclusive_text_payload(prebuilt_index_dir: Path, tmp_path: Path) -> None:
-    source_file = tmp_path / "sample.py"
-    lines = ["one\n", "two\n", "three\n", "four\n"]
-    source_file.write_text("".join(lines), encoding="utf-8")
+def test_index_search_get_symbol_source_round_trip_returns_exact_lines(prebuilt_index_dir: Path) -> None:
+    async def _call(session: ClientSession) -> tuple[Any, Any]:
+        search = await session.call_tool("cosk_semantic_search", {"query_string": "authenticate user"})
+        search_payload = json.loads(_tool_text_payload(search))
+        symbol = await session.call_tool("cosk_get_symbol_source", {"node_ids": [search_payload[0]["node_id"]]})
+        return search, symbol
 
+    search_result, symbol_result = _run_mcp_session(["--db-dir", str(prebuilt_index_dir)], _call)
+    assert not search_result.isError
+    assert not symbol_result.isError
+    search_payload = json.loads(_tool_text_payload(search_result))
+    symbol_payload = json.loads(_tool_text_payload(symbol_result))
+    assert len(symbol_payload) == 1
+    entry = symbol_payload[0]
+    assert entry["node_id"] == search_payload[0]["node_id"]
+    expected_lines = Path(entry["file_path"]).read_text(encoding="utf-8").splitlines(keepends=True)
+    assert entry["source_code"] == "".join(expected_lines[entry["start_line"] - 1 : entry["end_line"]])
+    assert "token_count" in entry
+
+
+def test_cosk_get_symbol_source_mixed_valid_invalid_batch(prebuilt_index_dir: Path) -> None:
     async def _call(session: ClientSession) -> Any:
+        search = await session.call_tool("cosk_semantic_search", {"query_string": "authenticate"})
+        search_payload = json.loads(_tool_text_payload(search))
         return await session.call_tool(
-            "cosk_expand_definition",
-            {"file_path": str(source_file), "start_line": 2, "end_line": 3},
+            "cosk_get_symbol_source",
+            {"node_ids": [search_payload[0]["node_id"], "missing-node-id"]},
         )
 
     result = _run_mcp_session(["--db-dir", str(prebuilt_index_dir)], _call)
     assert not result.isError
-    assert _tool_text_payload(result) == "".join(lines[1:3])
+    payload = json.loads(_tool_text_payload(result))
+    assert payload[0]["node_id"]
+    assert payload[1] == {"node_id": "missing-node-id", "error": "not found"}
 
 
-def test_cosk_expand_definition_missing_file_returns_text_not_tool_error(
-    prebuilt_index_dir: Path, tmp_path: Path
-) -> None:
-    missing_file = tmp_path / "missing.py"
-
+def test_get_symbol_source_empty_node_ids_returns_mcp_error(prebuilt_index_dir: Path) -> None:
     async def _call(session: ClientSession) -> Any:
-        return await session.call_tool(
-            "cosk_expand_definition",
-            {"file_path": str(missing_file), "start_line": 1, "end_line": 2},
-        )
-
-    result = _run_mcp_session(["--db-dir", str(prebuilt_index_dir)], _call)
-    assert not result.isError
-    payload = _tool_text_payload(result)
-    assert isinstance(payload, str)
-    assert str(missing_file) in payload
-
-
-def test_cosk_expand_definition_out_of_range_returns_descriptive_text_not_tool_error(
-    prebuilt_index_dir: Path, tmp_path: Path
-) -> None:
-    source_file = tmp_path / "sample.py"
-    source_file.write_text("a\nb\n", encoding="utf-8")
-
-    async def _call(session: ClientSession) -> Any:
-        return await session.call_tool(
-            "cosk_expand_definition",
-            {"file_path": str(source_file), "start_line": 2, "end_line": 4},
-        )
-
-    result = _run_mcp_session(["--db-dir", str(prebuilt_index_dir)], _call)
-    assert not result.isError
-    assert "Requested line range 2-4 is outside file bounds; file has 2 lines." in _tool_text_payload(result)
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [
-        {"file_path": "file.py", "start_line": 0, "end_line": 1},
-        {"file_path": "file.py", "start_line": 3, "end_line": 2},
-        {"file_path": "   ", "start_line": 1, "end_line": 1},
-    ],
-)
-def test_cosk_expand_definition_invalid_params_return_mcp_error(prebuilt_index_dir: Path, payload: dict[str, object]) -> None:
-    async def _call(session: ClientSession) -> Any:
-        return await session.call_tool("cosk_expand_definition", payload)
+        return await session.call_tool("cosk_get_symbol_source", {"node_ids": []})
 
     result = _run_mcp_session(["--db-dir", str(prebuilt_index_dir)], _call)
     assert result.isError is True
@@ -342,9 +320,12 @@ def test_safety_middleware_applies_only_to_get_neighbors(tool_functions: dict[st
     source_file = tmp_path / "sample.py"
     source_file.write_text("a\nb\n", encoding="utf-8")
     tool_functions["store"].search.return_value = [{"node_id": "hash", "file_path": "a.py", "start_line": 1}]
+    tool_functions["store"].get_node_details.return_value = {
+        "id1": {"file_path": str(source_file), "start_line": 1, "end_line": 1, "raw_signature": "def a():"}
+    }
 
     assert json.loads(tool_functions["semantic_search"]("query", ctx=ctx))
-    assert tool_functions["expand_definition"](str(source_file), 1, 1, ctx=ctx) == "a\n"
+    assert json.loads(tool_functions["get_symbol_source"](["id1"], ctx=ctx))[0]["source_code"] == "a\n"
     assert tool_functions["find_usage"]("foo") == "[]"
     assert json.loads(tool_functions["get_neighbors"]("a.py:1", ctx=ctx))
     assert tool_functions["get_neighbors"]("a.py:1", ctx=ctx) == middleware.REVISIT_NOTICE
@@ -365,14 +346,17 @@ def test_end_to_end_depth_soft_block(tool_functions: dict[str, Any]) -> None:
     assert tool_functions["get_neighbors"]("a.py:5", ctx=ctx) == middleware.DEPTH_NOTICE
 
 
-def test_expand_definition_unlocks_depth_limit(tool_functions: dict[str, Any], tmp_path: Path) -> None:
+def test_get_symbol_source_unlocks_depth_limit(tool_functions: dict[str, Any], tmp_path: Path) -> None:
     _set_graph(("a.py:1", "a.py:2"), ("a.py:2", "a.py:3"), ("a.py:3", "a.py:4"), ("a.py:4", "a.py:5"))
     ctx = _Context(_Session())
     tool_functions["store"].search.return_value = [{"node_id": "hash", "file_path": "a.py", "start_line": 1}]
     tool_functions["semantic_search"]("query", ctx=ctx)
     source_file = tmp_path / "sample.py"
     source_file.write_text("a\n", encoding="utf-8")
-    tool_functions["expand_definition"](str(source_file), 1, 1, ctx=ctx)
+    tool_functions["store"].get_node_details.return_value = {
+        "id1": {"file_path": str(source_file), "start_line": 1, "end_line": 1, "raw_signature": "def a():"}
+    }
+    json.loads(tool_functions["get_symbol_source"](["id1"], ctx=ctx))
     assert json.loads(tool_functions["get_neighbors"]("a.py:5", ctx=ctx))
 
 

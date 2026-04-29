@@ -144,9 +144,10 @@ def mcp_tools(
     indexed_vector_store.upsert_nodes(fixture_nodes)
     mcp = create_mcp_server(indexed_vector_store)
     return {
+        "cosk_search_by_name": mcp._tool_manager.get_tool("cosk_search_by_name").fn,  # noqa: SLF001
         "cosk_semantic_search": mcp._tool_manager.get_tool("cosk_semantic_search").fn,  # noqa: SLF001
         "cosk_get_neighbors": mcp._tool_manager.get_tool("cosk_get_neighbors").fn,  # noqa: SLF001
-        "cosk_expand_definition": mcp._tool_manager.get_tool("cosk_expand_definition").fn,  # noqa: SLF001
+        "cosk_get_symbol_source": mcp._tool_manager.get_tool("cosk_get_symbol_source").fn,  # noqa: SLF001
         "cosk_find_usage": mcp._tool_manager.get_tool("cosk_find_usage").fn,  # noqa: SLF001
     }
 

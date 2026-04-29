@@ -162,11 +162,11 @@ def test_no_path_allows_without_depth_block() -> None:
     assert middleware.safety_wrap_get_neighbors("n11", ctx, lambda _: "ok", graph) == "ok"
 
 
-def test_expand_definition_unlocks_depth_blocking() -> None:
+def test_get_symbol_source_unlocks_depth_blocking() -> None:
     graph = _graph_with_edges(("n0", "n1"), ("n1", "n2"), ("n2", "n3"), ("n3", "n4"))
     ctx = _ctx()
     middleware.get_session_state(ctx.session).origin_node_ids = frozenset({"n0"})
-    middleware.record_expand_definition(ctx)
+    middleware.record_source_retrieval(ctx)
     assert middleware.safety_wrap_get_neighbors("n4", ctx, lambda _: "ok", graph) == "ok"
 
 

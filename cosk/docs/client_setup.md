@@ -142,7 +142,7 @@ The config location can be changed by setting the `COPILOT_HOME` environment var
 3. Confirm tools are available:
    - `cosk_semantic_search`
    - `cosk_get_neighbors`
-   - `cosk_expand_definition`
+   - `cosk_get_symbol_source`
    - `cosk_find_usage`
 
 ## Troubleshooting

@@ -12,9 +12,9 @@ DEFAULT_REVISIT_THRESHOLD = 1
 DEFAULT_MAX_DEPTH = 3
 
 REVISIT_NOTICE = (
-    "Notice: You have already traversed this node. Please analyze your current context or use cosk_expand_definition."
+    "Notice: You have already traversed this node. Please analyze your current context or use cosk_get_symbol_source."
 )
-DEPTH_NOTICE = "Notice: Depth limit reached. Summarize your findings or expand a definition."
+DEPTH_NOTICE = "Notice: Depth limit reached. Summarize your findings or retrieve source with cosk_get_symbol_source."
 
 _registry_lock = Lock()
 _registry: weakref.WeakKeyDictionary[object, "SessionState"] = weakref.WeakKeyDictionary()
@@ -24,7 +24,7 @@ _registry: weakref.WeakKeyDictionary[object, "SessionState"] = weakref.WeakKeyDi
 class SessionState:
     visit_counts: dict[str, int] = field(default_factory=dict)
     origin_node_ids: frozenset[str] | None = None
-    expand_definition_used: bool = False
+    source_retrieval_used: bool = False
 
 
 def _get_env_int(name: str, default: int, *, minimum: int = 0) -> int:
@@ -81,11 +81,11 @@ def record_search_origin(ctx: Any, results: list[dict[str, Any]]) -> None:
         state.origin_node_ids = frozenset(origin_node_ids)
 
 
-def record_expand_definition(ctx: Any) -> None:
+def record_source_retrieval(ctx: Any) -> None:
     session = _get_session_from_ctx(ctx)
     if session is None:
         return
-    get_session_state(session).expand_definition_used = True
+    get_session_state(session).source_retrieval_used = True
 
 
 def _minimum_depth_to_origin(graph: Any, origin_node_ids: frozenset[str], target_node_id: str) -> int | None:
@@ -121,7 +121,7 @@ def safety_wrap_get_neighbors(
     if current_visit_count >= get_revisit_threshold():
         return REVISIT_NOTICE
 
-    if state.origin_node_ids and not state.expand_definition_used:
+    if state.origin_node_ids and not state.source_retrieval_used:
         depth = _minimum_depth_to_origin(graph, state.origin_node_ids, node_id)
         if depth is not None and depth > get_max_traversal_depth():
             return DEPTH_NOTICE

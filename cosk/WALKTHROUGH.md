@@ -510,7 +510,7 @@ LanceDB is an embedded vector database (like SQLite, but for vectors). It stores
 |---|---|---|
 | `node_id` | string | SHA-256 of `file_path:start_line` — stable unique identifier |
 | `file_path` | string | Original file path for display |
-| `start_line` | int64 | Line number for display and `cosk_expand_definition` |
+| `start_line` | int64 | Line number for display and `cosk_get_symbol_source` |
 | `end_line` | int64 | End line for display |
 | `raw_signature` | string | The signature text, returned in search results |
 | `summary` | string | The docstring (named `summary` in storage) |
@@ -625,13 +625,11 @@ The AI agent uses this to trace dependencies — "what would break if I change t
 
 ---
 
-#### Tool 3: `cosk_expand_definition`
+#### Tool 3: `cosk_get_symbol_source`
 
-**Input:** `file_path: str`, `start_line: int`, `end_line: int`
+**Input:** `node_ids: list[str]`, optional `index_name: str`
 
-**What it does:** Opens the source file and returns the literal source lines for that range. This is the "drill down" tool — once the AI finds a relevant definition via search or graph navigation, it can read the actual implementation.
-
-This is intentionally simple: just `open(file_path).readlines()[start_line-1 : end_line]`. Error handling returns a readable error string rather than raising, so the AI gets a useful message if the file moved.
+**What it does:** Resolves one or more node IDs to metadata and literal source lines in one call. This is the "drill down" tool — once the AI finds relevant node IDs via search or graph navigation, it can read actual implementations without extra round-trips.
 
 ---
 

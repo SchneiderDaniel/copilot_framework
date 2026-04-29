@@ -18,28 +18,27 @@ This repository is an agentic automation framework designed to orchestrate speci
 Cosk is an MCP server that provides semantic search and dependency graph
 navigation over the indexed codebase.
 
-### Tool preference (mandatory)
+### Task → tool routing (mandatory)
 
-Choose the right tool based on query type — do **not** default to grep for everything, but do **not** use cosk as a substitute for grep either:
+| Task | Tool |
+|------|------|
+| Symbol by name / substring / regex | `cosk_search_by_name` |
+| Concept / "how does X work" | `cosk_semantic_search` |
+| What calls or depends on X | `cosk_get_neighbors` |
+| Where is symbol X used | `cosk_find_usage` |
+| Show me the body of X | `cosk_get_symbol_source` |
+| Literal string in any file | `grep` |
 
-- **Concept / semantic queries** ("find code related to X", "how is Y implemented") → use cosk tools
-- **Exact name / substring / pattern matching** ("find all symbols containing string X") → use **grep**
-
-**Do not use `cosk_semantic_search` for exact name lookups** — it is a vector similarity search, not a name filter. For name-pattern searches, grep is more precise and token-efficient.
-
-### When to use
-- **Finding relevant code**: use `cosk_semantic_search` for concept-level queries.
-- **Understanding dependencies**: use `cosk_get_neighbors` (inbound/outbound).
-- **Reading a definition**: use `cosk_expand_definition` for raw source lines.
-- **Tracing a symbol**: use `cosk_find_usage` to find all call/import sites.
+Never use grep for code exploration. grep is only allowed for searching literal strings in file content.
 
 ### Available tools
 
 | Tool | Input | Purpose |
 |------|-------|---------|
+| `cosk_search_by_name` | `query`, optional `kind`, optional `index_name` | Exact / substring / regex symbol-name search |
 | `cosk_semantic_search` | `query_string` | Vector search across all definitions |
 | `cosk_get_neighbors` | `node_id` (`file:line`) | Graph neighbors of a node |
-| `cosk_expand_definition` | `node_id` | Raw source lines for a node |
+| `cosk_get_symbol_source` | `node_ids`, optional `index_name` | Batched source retrieval for node IDs |
 | `cosk_find_usage` | `entity_name` | All call/import sites for a symbol |
 
 

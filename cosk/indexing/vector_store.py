@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import re
+from collections import defaultdict
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TypedDict
@@ -324,3 +326,102 @@ class SkeletonNodeVectorStore:
             }
             for row in rows
         ]
+
+    @staticmethod
+    def _extract_symbol_name(raw_signature: str) -> str:
+        signature = raw_signature.strip()
+        class_match = re.match(r"^class\s+([A-Za-z_]\w*)", signature)
+        if class_match:
+            return class_match.group(1)
+        function_match = re.match(r"^(?:async\s+def|def)\s+([A-Za-z_]\w*)", signature)
+        if function_match:
+            return function_match.group(1)
+        return signature
+
+    @staticmethod
+    def _is_class_signature(raw_signature: str) -> bool:
+        return bool(re.match(r"^\s*class\s+[A-Za-z_]\w*", raw_signature))
+
+    @staticmethod
+    def _is_function_signature(raw_signature: str) -> bool:
+        return bool(re.match(r"^\s*(?:async\s+def|def)\s+[A-Za-z_]\w*", raw_signature))
+
+    @staticmethod
+    def _looks_like_regex(query: str) -> bool:
+        return bool(re.search(r"(\\[AbBdDsSwWZ]|[\^\$\.\*\+\?\[\]\(\)\{\}\|])", query))
+
+    @staticmethod
+    def _line_within_any_span(line: int, spans: list[tuple[int, int]]) -> bool:
+        return any(start <= line <= end for start, end in spans)
+
+    def search_by_name(self, query: str, kind: str = "any") -> list[SkeletonNodeSearchResult]:
+        normalized_query = query.strip()
+        if not normalized_query:
+            raise ValueError("query must not be blank")
+
+        normalized_kind = kind.strip().lower()
+        valid_kinds = {"any", "function", "class", "method"}
+        if normalized_kind not in valid_kinds:
+            raise ValueError("kind must be one of: function, class, method, any")
+
+        db = self._connect()
+        table = self._open_table_if_exists(db)
+        if table is None:
+            return []
+
+        rows = table.to_arrow().to_pylist()
+        if not rows:
+            return []
+
+        class_spans_by_file: dict[str, list[tuple[int, int]]] = defaultdict(list)
+        for row in rows:
+            raw_signature = str(row.get("raw_signature", ""))
+            if self._is_class_signature(raw_signature):
+                class_spans_by_file[str(row.get("file_path", ""))].append(
+                    (int(row.get("start_line", 0)), int(row.get("end_line", 0)))
+                )
+
+        matcher = None
+        if self._looks_like_regex(normalized_query):
+            try:
+                matcher = re.compile(normalized_query, re.IGNORECASE)
+            except re.error as exc:
+                raise ValueError(f"invalid regex query: {exc}") from exc
+        lowered_query = normalized_query.lower()
+
+        matches: list[SkeletonNodeSearchResult] = []
+        for row in rows:
+            raw_signature = str(row.get("raw_signature", ""))
+            symbol_name = self._extract_symbol_name(raw_signature)
+            file_path = str(row.get("file_path", ""))
+            start_line = int(row.get("start_line", 0))
+
+            inferred_kind = "other"
+            if self._is_class_signature(raw_signature):
+                inferred_kind = "class"
+            elif self._is_function_signature(raw_signature):
+                enclosed_by_class = self._line_within_any_span(start_line, class_spans_by_file[file_path])
+                inferred_kind = "method" if enclosed_by_class else "function"
+
+            if normalized_kind != "any" and inferred_kind != normalized_kind:
+                continue
+
+            searchable_text = symbol_name or raw_signature.strip()
+            if matcher is not None:
+                is_match = bool(matcher.search(searchable_text))
+            else:
+                is_match = lowered_query in searchable_text.lower()
+            if not is_match:
+                continue
+
+            matches.append(
+                {
+                    "node_id": str(row["node_id"]),
+                    "file_path": file_path,
+                    "start_line": int(row["start_line"]),
+                    "end_line": int(row["end_line"]),
+                    "raw_signature": raw_signature,
+                    "summary": str(row.get("summary", "")),
+                }
+            )
+        return matches

@@ -47,7 +47,7 @@ That's it. Cosk will:
 
 ### 3. Use it
 
-Your AI client now has access to the `cosk_semantic_search`, `cosk_get_neighbors`, `cosk_expand_definition`, and `cosk_find_usage` MCP tools automatically.
+Your AI client now has access to the `cosk_search_by_name`, `cosk_semantic_search`, `cosk_get_neighbors`, `cosk_get_symbol_source`, and `cosk_find_usage` MCP tools automatically.
 
 ### Uninstall
 
@@ -194,19 +194,16 @@ See full per-client guide: [`docs/client_setup.md`](docs/client_setup.md)
 
 ## When to use cosk vs grep
 
-Choose based on the nature of your question:
+| Task | Tool |
+|------|------|
+| Symbol by name / substring / regex | `cosk_search_by_name` |
+| Concept / "how does X work" | `cosk_semantic_search` |
+| What calls or depends on X | `cosk_get_neighbors` |
+| Where is symbol X used | `cosk_find_usage` |
+| Show me the body of X | `cosk_get_symbol_source` |
+| Literal string in any file | `grep` |
 
-| Question type | Right tool | Example |
-|---|---|---|
-| "How does X work?" | `cosk_semantic_search` | *"How does cosk handle retries when the Gemini API fails?"* |
-| "Where is concept Y implemented?" | `cosk_semantic_search` | *"Where is the dependency graph built during indexing?"* |
-| "What depends on / calls Z?" | `cosk_get_neighbors` | *"What does `GeminiEmbeddingProvider` depend on?"* |
-| "Where is symbol Z used?" | `cosk_find_usage` | *"Where is `SkeletonNode` referenced across the codebase?"* |
-| "Show me the full body of function Z" | `cosk_expand_definition` | *"What exactly does `GeminiEmbeddingProvider.embed` do?"* |
-| "Find all symbols whose name contains string X" | **grep** | *"Find all functions with the word 'embed' in their name"* |
-| "Which files contain literal string X?" | **grep** | *"Which files contain the string 'lancedb'"* |
-
-The clearest signal for cosk is when the question is about **how**, **why**, or **what depends on what**. The clearest signal for grep is when you are matching a literal name or string pattern.
+Never use grep for code exploration. grep is only allowed for searching literal strings in file content.
 
 ---
 
@@ -217,7 +214,7 @@ The clearest signal for cosk is when the question is about **how**, **why**, or 
 - Purpose: semantic retrieval of indexed nodes.
 - Input: `{ "query_string": "string (required, non-blank)" }`
 - Output: JSON array — `node_id`, `file_path`, `start_line`, `end_line`, `raw_signature`, `summary`
-- **When NOT to use**: do not use this for exact name/substring lookups (e.g. "find all functions containing the word X"). It is a vector similarity search, not a name filter — use **grep** for pattern matching instead.
+- **When NOT to use**: do not use this for exact name/substring lookups (e.g. "find all functions containing the word X"). It is a vector similarity search, not a name filter — use `cosk_search_by_name` for symbol-name and pattern matching.
 
 ```json
 { "query_string": "authenticate user" }
@@ -238,6 +235,19 @@ The clearest signal for cosk is when the question is about **how**, **why**, or 
 
 Errors: blank query → `INVALID_PARAMS`; runtime failure → `INTERNAL_ERROR`; empty index → `[]`.
 
+### `cosk_search_by_name`
+
+- Purpose: exact-name / substring / regex symbol-name search without embeddings.
+- Input: `{ "query": "string (required, non-blank)", "kind": "function|class|method|any" (optional, default "any") }`
+- Output: JSON array — `node_id`, `file_path`, `start_line`, `end_line`, `raw_signature`, `summary`
+- Search behavior: auto-detects regex when `query` contains regex syntax; otherwise case-insensitive substring matching.
+
+```json
+{ "query": "embed", "kind": "function" }
+```
+
+Errors: blank query → `INVALID_PARAMS`; invalid kind → `INVALID_PARAMS`; invalid regex → `INVALID_PARAMS`; runtime failure → `INTERNAL_ERROR`; empty index → `[]`.
+
 ### `cosk_get_neighbors`
 
 - Purpose: inbound/outbound graph neighbors for a node.
@@ -246,13 +256,13 @@ Errors: blank query → `INVALID_PARAMS`; runtime failure → `INTERNAL_ERROR`; 
 
 Errors: blank node_id → `INVALID_PARAMS`; missing graph → `INTERNAL_ERROR`. Cycle/depth notices are plain text responses, not MCP errors.
 
-### `cosk_expand_definition`
+### `cosk_get_symbol_source`
 
-- Purpose: raw source lines for a file range.
-- Input: `{ "file_path": "string", "start_line": int, "end_line": int }`
-- Output: plain text (inclusive source slice).
+- Purpose: retrieve source and metadata for one or more node IDs in a single call.
+- Input: `{ "node_ids": ["id1", "id2"], "index_name": "optional" }`
+- Output: JSON array entries with `node_id`, `file_path`, `start_line`, `end_line`, `raw_signature`, `source_code`, `token_count`, or `{node_id,error}` for per-entry failures.
 
-Errors: blank path or invalid range → `INVALID_PARAMS`; unreadable file → plain text notice.
+Errors: empty/non-list `node_ids` → `INVALID_PARAMS`; unknown IDs and sandbox violations are returned as per-entry errors.
 
 ### `cosk_find_usage`
 
@@ -270,13 +280,13 @@ Cosk tracks traversal context (`cosk/safety/middleware.py`):
 
 - `record_search_origin` — stores initial search origins.
 - `safety_wrap_get_neighbors` — applies revisit and depth checks.
-- `record_expand_definition` — unlocks deeper traversal after source expansion.
+- `record_source_retrieval` — unlocks deeper traversal after source retrieval.
 
 Guardrail notices are plain text, for example:
 
 ```text
-Notice: You have already traversed this node. Please analyze your current context or use cosk_expand_definition.
-Notice: Depth limit reached. Summarize your findings or expand a definition.
+Notice: You have already traversed this node. Please analyze your current context or use cosk_get_symbol_source.
+Notice: Depth limit reached. Summarize your findings or retrieve source with cosk_get_symbol_source.
 ```
 
 ## Inspecting the index

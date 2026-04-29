@@ -32,7 +32,7 @@ from cosk.index_service import IndexBuildRequest
 from cosk.indexing.embedding import GeminiEmbeddingProvider
 from cosk.indexing.vector_store import SkeletonNodeVectorStore
 from cosk.safety.middleware import (
-    record_expand_definition,
+    record_source_retrieval,
     record_search_origin,
     safety_wrap_get_neighbors,
 )
@@ -171,14 +171,36 @@ def enrich_neighbor_entries(
     return enriched, sorted(set(warnings))
 
 
-def read_file_range(file_path: str, start_line: int, end_line: int, *, context_target_dir: Path | None = None) -> str:
+def _resolve_context_target_dir(context: Any | None) -> Path | None:
+    if context is None:
+        return None
+    target_dir = getattr(context, "target_dir", None)
+    if target_dir is not None:
+        return Path(target_dir)
+    manifest = getattr(context, "manifest", None)
+    manifest_target_dir = getattr(manifest, "target_dir", None)
+    if manifest_target_dir is not None:
+        return Path(manifest_target_dir)
+    return None
+
+
+def _resolve_source_path(file_path: str, context_target_dir: Path | None = None) -> tuple[Path, str | None]:
     path = Path(file_path)
     if context_target_dir is not None and not path.is_absolute():
         path = (context_target_dir / path).resolve()
+    if path.is_absolute():
+        path = path.resolve()
     if context_target_dir is not None and path.is_absolute():
         root = context_target_dir.resolve()
         if root not in [path, *path.parents]:
-            return f"Unable to read '{file_path}': path is outside indexed root"
+            return path, "path is outside indexed root"
+    return path, None
+
+
+def read_file_range(file_path: str, start_line: int, end_line: int, *, context_target_dir: Path | None = None) -> str:
+    path, path_error = _resolve_source_path(file_path, context_target_dir)
+    if path_error is not None:
+        return f"Unable to read '{file_path}': {path_error}"
     try:
         with open(str(path), "r", encoding="utf-8") as source_file:
             lines = source_file.readlines()
@@ -236,6 +258,37 @@ def create_mcp_server(
                 mcp_types.ErrorData(code=mcp_types.INTERNAL_ERROR, message=f"cosk_semantic_search failed: {exc}")
             ) from exc
 
+    @mcp.tool()
+    def cosk_search_by_name(
+        query: str,
+        kind: str = "any",
+        index_name: str | None = None,
+        ctx: Context | None = None,
+    ) -> str:
+        if not query or not query.strip():
+            raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="query must not be blank"))
+        normalized_kind = kind.strip().lower()
+        if normalized_kind not in {"function", "class", "method", "any"}:
+            raise McpError(
+                mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="kind must be one of: function, class, method, any")
+            )
+        try:
+            results = _resolve_store(index_name).search_by_name(query.strip(), kind=normalized_kind)
+            enriched, token_warnings = enrich_search_results(results)
+            record_search_origin(ctx, enriched)
+            if ctx is not None and hasattr(ctx, "info"):
+                for warning in token_warnings:
+                    ctx.info(warning)
+            return json.dumps(enriched)
+        except ValueError as exc:
+            raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message=str(exc))) from exc
+        except McpError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise McpError(
+                mcp_types.ErrorData(code=mcp_types.INTERNAL_ERROR, message=f"cosk_search_by_name failed: {exc}")
+            ) from exc
+
     def _core_get_neighbors(node_id: str, index_name: str | None) -> str:
         if manager is not None:
             context = manager.get_context(index_name=index_name)
@@ -274,22 +327,57 @@ def create_mcp_server(
             ) from exc
 
     @mcp.tool()
-    def cosk_expand_definition(
-        file_path: str,
-        start_line: int,
-        end_line: int,
+    def cosk_get_symbol_source(
+        node_ids: list[str],
         index_name: str | None = None,
         ctx: Context | None = None,
     ) -> str:
-        if not file_path or not file_path.strip():
-            raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="file_path must not be blank"))
-        if start_line < 1:
-            raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="start_line must be >= 1"))
-        if end_line < start_line:
-            raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="end_line must be >= start_line"))
-        context = manager.get_context(index_name=index_name) if manager is not None else None
-        record_expand_definition(ctx)
-        return read_file_range(file_path.strip(), start_line, end_line, context_target_dir=context.target_dir if context else None)
+        if not isinstance(node_ids, list) or not node_ids:
+            raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="node_ids must be a non-empty list"))
+        try:
+            context = _resolve_context(index_name)
+            context_target_dir = _resolve_context_target_dir(context)
+            details_map = _resolve_store(index_name).get_node_details(node_ids)
+            entries: list[dict[str, object]] = []
+            for node_id in node_ids:
+                detail = details_map.get(node_id)
+                if detail is None:
+                    entries.append({"node_id": node_id, "error": "not found"})
+                    continue
+                file_path = detail.get("file_path")
+                start_line = detail.get("start_line")
+                end_line = detail.get("end_line")
+                if not file_path or start_line is None or end_line is None:
+                    entries.append({"node_id": node_id, "error": "metadata is incomplete"})
+                    continue
+                path, path_error = _resolve_source_path(str(file_path), context_target_dir)
+                if path_error is not None:
+                    entries.append({"node_id": node_id, "error": path_error})
+                    continue
+                source_code = read_file_range(str(path), int(start_line), int(end_line), context_target_dir=None)
+                if source_code.startswith("Unable to read '") or source_code.startswith("Requested line range "):
+                    entries.append({"node_id": node_id, "error": source_code})
+                    continue
+                token_count, _warnings = estimate_with_warnings(source_code)
+                entries.append(
+                    {
+                        "node_id": node_id,
+                        "file_path": str(file_path),
+                        "start_line": int(start_line),
+                        "end_line": int(end_line),
+                        "raw_signature": str(detail.get("raw_signature", "")),
+                        "source_code": source_code,
+                        "token_count": token_count,
+                    }
+                )
+            record_source_retrieval(ctx)
+            return json.dumps(entries)
+        except McpError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise McpError(
+                mcp_types.ErrorData(code=mcp_types.INTERNAL_ERROR, message=f"cosk_get_symbol_source failed: {exc}")
+            ) from exc
 
     @mcp.tool()
     def cosk_find_usage(entity_name: str, index_name: str | None = None) -> str:
