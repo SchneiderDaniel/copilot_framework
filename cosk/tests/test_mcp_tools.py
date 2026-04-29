@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -42,14 +43,143 @@ def _build_tool_with_nodes(tmp_path: Path, nodes: list[SkeletonNode]):
     return mcp._tool_manager.get_tool("cosk_search_by_name").fn, provider  # noqa: SLF001
 
 
+def _build_tools_with_store(store: object):
+    mcp = create_mcp_server(store)
+    return {
+        "symbol": mcp._tool_manager.get_tool("cosk_symbol_search").fn,  # noqa: SLF001
+        "hybrid": mcp._tool_manager.get_tool("cosk_hybrid_search").fn,  # noqa: SLF001
+        "search_by_name": mcp._tool_manager.get_tool("cosk_search_by_name").fn,  # noqa: SLF001
+    }
+
+
 def test_mcp_tools_registered(mcp_tools: dict[str, object]) -> None:
     assert {
         "cosk_search_by_name",
         "cosk_semantic_search",
+        "cosk_symbol_search",
+        "cosk_hybrid_search",
         "cosk_get_neighbors",
         "cosk_get_symbol_source",
         "cosk_find_usage",
     } <= set(mcp_tools)
+
+
+def test_mcp_tools_registered_includes_symbol_and_hybrid(mcp_tools: dict[str, object]) -> None:
+    assert "cosk_symbol_search" in mcp_tools
+    assert "cosk_hybrid_search" in mcp_tools
+
+
+def test_cosk_symbol_search_exact_happy_path() -> None:
+    store = Mock()
+    store.search_symbol.return_value = []
+    tool = _build_tools_with_store(store)["symbol"]
+    assert json.loads(tool("authenticate_user")) == []
+    store.search_symbol.assert_called_once_with("authenticate_user", 5, fuzzy=False, distance=0)
+
+
+def test_cosk_symbol_search_fuzzy_passes_distance() -> None:
+    store = Mock()
+    store.search_symbol.return_value = []
+    tool = _build_tools_with_store(store)["symbol"]
+    json.loads(tool("authentcate_user", fuzzy=True, distance=2))
+    store.search_symbol.assert_called_once_with("authentcate_user", 5, fuzzy=True, distance=2)
+
+
+@pytest.mark.parametrize("query", ["", "   "])
+def test_cosk_symbol_search_rejects_blank_query(query: str) -> None:
+    store = Mock()
+    tool = _build_tools_with_store(store)["symbol"]
+    with pytest.raises(McpError):
+        tool(query)
+
+
+def test_cosk_symbol_search_rejects_invalid_top_k() -> None:
+    store = Mock()
+    tool = _build_tools_with_store(store)["symbol"]
+    with pytest.raises(McpError):
+        tool("authenticate_user", top_k=0)
+
+
+def test_cosk_symbol_search_rejects_negative_distance() -> None:
+    store = Mock()
+    tool = _build_tools_with_store(store)["symbol"]
+    with pytest.raises(McpError):
+        tool("authenticate_user", distance=-1)
+
+
+def test_cosk_symbol_search_maps_store_valueerror_to_invalid_params() -> None:
+    store = Mock()
+    store.search_symbol.side_effect = ValueError("bad")
+    tool = _build_tools_with_store(store)["symbol"]
+    with pytest.raises(McpError):
+        tool("authenticate_user")
+
+
+def test_cosk_hybrid_search_happy_path_returns_rrf_merged_sorted_results() -> None:
+    store = Mock()
+    store.search.return_value = [
+        {"node_id": "v1", "file_path": "v.py", "start_line": 1, "end_line": 1, "raw_signature": "def v1()", "summary": "v1"},
+        {"node_id": "both", "file_path": "b.py", "start_line": 1, "end_line": 1, "raw_signature": "def both()", "summary": "both"},
+    ]
+    store.search_symbol.return_value = [
+        {"node_id": "both", "file_path": "b.py", "start_line": 1, "end_line": 1, "raw_signature": "def both()", "summary": "both"},
+        {"node_id": "b1", "file_path": "b1.py", "start_line": 1, "end_line": 1, "raw_signature": "def b1()", "summary": "b1"},
+    ]
+    tool = _build_tools_with_store(store)["hybrid"]
+    payload = json.loads(tool("query", top_k=3))
+    assert [item["node_id"] for item in payload] == ["both", "v1", "b1"]
+
+
+def test_cosk_hybrid_search_runs_vector_and_bm25_paths() -> None:
+    store = Mock()
+    store.search.return_value = []
+    store.search_symbol.return_value = []
+    tool = _build_tools_with_store(store)["hybrid"]
+    json.loads(tool("query", top_k=2))
+    store.search.assert_called_once_with("query", top_k=2)
+    store.search_symbol.assert_called_once_with("query", 2, fuzzy=False)
+
+
+@pytest.mark.parametrize("query", ["", "   "])
+def test_cosk_hybrid_search_rejects_blank_query(query: str) -> None:
+    store = Mock()
+    tool = _build_tools_with_store(store)["hybrid"]
+    with pytest.raises(McpError):
+        tool(query)
+
+
+def test_cosk_hybrid_search_rejects_invalid_top_k() -> None:
+    store = Mock()
+    tool = _build_tools_with_store(store)["hybrid"]
+    with pytest.raises(McpError):
+        tool("query", top_k=0)
+
+
+def test_cosk_hybrid_search_uses_index_name_context_resolution() -> None:
+    store = Mock()
+    store.search.return_value = []
+    store.search_symbol.return_value = []
+
+    class StubManager:
+        config = get_cosk_config()
+
+        def __init__(self) -> None:
+            self.calls: list[str | None] = []
+
+        def get_context(self, *, index_name: str | None = None, db_dir: Path | None = None):  # noqa: ARG002
+            self.calls.append(index_name)
+            return SimpleNamespace(vector_store=store, graph=None, target_dir=None)
+
+    manager = StubManager()
+    mcp = create_mcp_server(manager=manager)
+    tool = mcp._tool_manager.get_tool("cosk_hybrid_search").fn  # noqa: SLF001
+    json.loads(tool("query", index_name="named-index"))
+    assert manager.calls == ["named-index"]
+
+
+def test_cosk_search_by_name_regression_still_operates_identically(mcp_tools: dict[str, object]) -> None:
+    payload = json.loads(mcp_tools["cosk_search_by_name"]("wrap"))
+    assert any("wrapper" in entry["raw_signature"] for entry in payload)
 
 
 def test_cosk_semantic_search_valid_and_blank_error(mcp_tools: dict[str, object]) -> None:

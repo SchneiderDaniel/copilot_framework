@@ -9,6 +9,11 @@ from typing import TypedDict
 
 import lancedb
 import pyarrow as pa
+try:
+    from lancedb.query import MatchQuery, MultiMatchQuery
+except Exception:  # noqa: BLE001
+    MatchQuery = None  # type: ignore[assignment]
+    MultiMatchQuery = None  # type: ignore[assignment]
 
 from cosk.extraction.models import SkeletonNode
 from cosk.indexing.embedding import (
@@ -19,6 +24,14 @@ from cosk.indexing.embedding import (
 )
 
 _EMBED_BATCH_SIZE = _GEMINI_BATCH_LIMIT
+_SYMBOL_SEARCH_FIELDS = ("node_id", "file_path", "start_line", "end_line", "raw_signature", "summary")
+
+try:  # pragma: no branch
+    _LANCEDB_MATCH_QUERY = MatchQuery
+    _LANCEDB_MULTI_MATCH_QUERY = MultiMatchQuery
+except Exception:  # noqa: BLE001
+    _LANCEDB_MATCH_QUERY = None
+    _LANCEDB_MULTI_MATCH_QUERY = None
 
 
 def _embed_all(
@@ -67,6 +80,7 @@ class SkeletonNodeVectorStore:
         "start_line",
         "end_line",
         "raw_signature",
+        "node_name",
         "summary",
         "vector",
     )
@@ -98,6 +112,7 @@ class SkeletonNodeVectorStore:
             "start_line": node.start_line,
             "end_line": node.end_line,
             "raw_signature": node.raw_signature,
+            "node_name": self._extract_symbol_name(node.raw_signature.strip()) or node.raw_signature.strip(),
             "summary": summary,
             "vector": [float(v) for v in vector],
         }
@@ -111,6 +126,7 @@ class SkeletonNodeVectorStore:
                 pa.field("start_line", pa.int64()),
                 pa.field("end_line", pa.int64()),
                 pa.field("raw_signature", pa.string()),
+                pa.field("node_name", pa.string()),
                 pa.field("summary", pa.string()),
                 pa.field("vector", pa.list_(pa.float32(), vector_dim)),
             ]
@@ -119,6 +135,10 @@ class SkeletonNodeVectorStore:
     def _connect(self):
         self._db_dir.mkdir(parents=True, exist_ok=True)
         return lancedb.connect(str(self._db_dir))
+
+    @staticmethod
+    def _result_payload(row: dict[str, object]) -> SkeletonNodeSearchResult:
+        return {field: row[field] for field in _SYMBOL_SEARCH_FIELDS}  # type: ignore[return-value]
 
     def _open_table_if_exists(self, db):
         try:
@@ -136,6 +156,33 @@ class SkeletonNodeVectorStore:
                 self._vector_dim = list_size
         except Exception:  # noqa: BLE001
             return
+
+    @staticmethod
+    def _ensure_symbol_fts_indexes(table, *, replace: bool = False) -> None:
+        for field_name, index_name in (("node_name", "node_name_idx"), ("raw_signature", "raw_signature_idx")):
+            try:
+                table.create_fts_index(field_name, name=index_name, replace=replace)
+            except Exception as exc:  # noqa: BLE001
+                if not replace and "already exists" in str(exc).lower():
+                    continue
+                raise
+
+    @staticmethod
+    def _validate_symbol_search_capabilities() -> None:
+        if _LANCEDB_MATCH_QUERY is not None and _LANCEDB_MULTI_MATCH_QUERY is not None:
+            return
+        raise RuntimeError(
+            "LanceDB full-text symbol search capability is unavailable in this environment. "
+            "Upgrade lancedb to a version with MatchQuery and MultiMatchQuery support."
+        )
+
+    @staticmethod
+    def _ensure_symbol_search_ready(table) -> None:
+        schema = table.schema
+        if schema.get_field_index("node_name") < 0:
+            raise RuntimeError("Symbol search requires a rebuilt index with the node_name column. Please rebuild the index.")
+        if table.index_stats("node_name_idx") is None or table.index_stats("raw_signature_idx") is None:
+            raise RuntimeError("Symbol search requires BM25 indexes. Please rebuild the index.")
 
     def validate_index(self) -> bool:
         if not self._db_dir.exists():
@@ -192,6 +239,7 @@ class SkeletonNodeVectorStore:
         target_table = db.create_table(self._table_name, schema=self._schema(vector_dim))
         if rows:
             target_table.add(rows)
+        self._ensure_symbol_fts_indexes(target_table, replace=True)
         db.drop_table(staging_table_name, ignore_missing=True)
         if not self.validate_index():
             raise RuntimeError("index rebuild failed validation")
@@ -239,6 +287,7 @@ class SkeletonNodeVectorStore:
             .when_not_matched_insert_all()
             .execute(rows)
         )
+        self._ensure_symbol_fts_indexes(table, replace=False)
         return len(nodes)
 
     def delete_by_file_paths(self, file_paths: Sequence[str]) -> int:
@@ -315,17 +364,32 @@ class SkeletonNodeVectorStore:
             raise ValueError("query embedding vector dimension mismatch")
 
         rows = table.search([float(value) for value in query_vector]).limit(top_k).to_list()
-        return [
-            {
-                "node_id": row["node_id"],
-                "file_path": row["file_path"],
-                "start_line": row["start_line"],
-                "end_line": row["end_line"],
-                "raw_signature": row["raw_signature"],
-                "summary": row["summary"],
-            }
-            for row in rows
-        ]
+        return [self._result_payload(row) for row in rows]
+
+    def search_symbol(self, name: str, top_k: int = 5, *, fuzzy: bool = False, distance: int = 0) -> list[SkeletonNodeSearchResult]:
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("name must not be blank")
+        if top_k <= 0:
+            raise ValueError("top_k must be > 0")
+        if distance < 0:
+            raise ValueError("distance must be >= 0")
+
+        db = self._connect()
+        table = self._open_table_if_exists(db)
+        if table is None:
+            return []
+
+        self._validate_symbol_search_capabilities()
+        self._ensure_symbol_search_ready(table)
+
+        query = (
+            _LANCEDB_MATCH_QUERY(normalized_name, "node_name", fuzziness=distance)
+            if fuzzy
+            else _LANCEDB_MULTI_MATCH_QUERY(normalized_name, ["node_name", "raw_signature"], boosts=[3.0, 1.0])
+        )
+        rows = table.search(query, query_type="fts").limit(top_k).to_list()
+        return [self._result_payload(row) for row in rows]
 
     @staticmethod
     def _extract_symbol_name(raw_signature: str) -> str:

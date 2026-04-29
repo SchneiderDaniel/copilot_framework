@@ -19,6 +19,7 @@ def _tool_fn(search_results: list[dict[str, object]] | None = None):
     store = Mock()
     store.search.return_value = [] if search_results is None else search_results
     store.search_by_name.return_value = []
+    store.search_symbol.return_value = []
     mcp = create_mcp_server(store)
     tool = mcp._tool_manager.get_tool("cosk_semantic_search")  # noqa: SLF001
     return tool.fn, store
@@ -28,12 +29,15 @@ def _tool_functions():
     store = Mock()
     store.search.return_value = []
     store.search_by_name.return_value = []
+    store.search_symbol.return_value = []
     store.get_node_details.return_value = {}
     mcp = create_mcp_server(store)
     return {
         "store": store,
         "search_by_name": mcp._tool_manager.get_tool("cosk_search_by_name").fn,  # noqa: SLF001
         "semantic_search": mcp._tool_manager.get_tool("cosk_semantic_search").fn,  # noqa: SLF001
+        "symbol_search": mcp._tool_manager.get_tool("cosk_symbol_search").fn,  # noqa: SLF001
+        "hybrid_search": mcp._tool_manager.get_tool("cosk_hybrid_search").fn,  # noqa: SLF001
         "get_neighbors": mcp._tool_manager.get_tool("cosk_get_neighbors").fn,  # noqa: SLF001
         "get_symbol_source": mcp._tool_manager.get_tool("cosk_get_symbol_source").fn,  # noqa: SLF001
         "find_usage": mcp._tool_manager.get_tool("cosk_find_usage").fn,  # noqa: SLF001
@@ -119,9 +123,12 @@ def test_create_mcp_server_registers_all_tools() -> None:
     store = Mock()
     store.search.return_value = []
     store.search_by_name.return_value = []
+    store.search_symbol.return_value = []
     mcp = create_mcp_server(store)
     assert mcp._tool_manager.get_tool("cosk_search_by_name") is not None  # noqa: SLF001
     assert mcp._tool_manager.get_tool("cosk_semantic_search") is not None  # noqa: SLF001
+    assert mcp._tool_manager.get_tool("cosk_symbol_search") is not None  # noqa: SLF001
+    assert mcp._tool_manager.get_tool("cosk_hybrid_search") is not None  # noqa: SLF001
     assert mcp._tool_manager.get_tool("cosk_get_neighbors") is not None  # noqa: SLF001
     assert mcp._tool_manager.get_tool("cosk_get_symbol_source") is not None  # noqa: SLF001
     assert mcp._tool_manager.get_tool("cosk_find_usage") is not None  # noqa: SLF001
@@ -131,8 +138,56 @@ def test_create_mcp_server_registers_cosk_search_by_name() -> None:
     store = Mock()
     store.search.return_value = []
     store.search_by_name.return_value = []
+    store.search_symbol.return_value = []
     mcp = create_mcp_server(store)
     assert mcp._tool_manager.get_tool("cosk_search_by_name") is not None  # noqa: SLF001
+
+
+def test_create_mcp_server_registers_symbol_and_hybrid_tools() -> None:
+    store = Mock()
+    store.search.return_value = []
+    store.search_by_name.return_value = []
+    store.search_symbol.return_value = []
+    mcp = create_mcp_server(store)
+    assert mcp._tool_manager.get_tool("cosk_symbol_search") is not None  # noqa: SLF001
+    assert mcp._tool_manager.get_tool("cosk_hybrid_search") is not None  # noqa: SLF001
+
+
+def test_cosk_symbol_search_defaults_top_k_and_distance() -> None:
+    tools = _tool_functions()
+    json.loads(tools["symbol_search"]("authenticate_user"))
+    tools["store"].search_symbol.assert_called_once_with("authenticate_user", 5, fuzzy=False, distance=0)
+
+
+def test_cosk_hybrid_search_serializes_json_array() -> None:
+    tools = _tool_functions()
+    tools["store"].search.return_value = []
+    tools["store"].search_symbol.return_value = []
+    payload = json.loads(tools["hybrid_search"]("authenticate_user"))
+    assert isinstance(payload, list)
+
+
+def test_cosk_hybrid_search_rrf_formula_and_ordering() -> None:
+    tools = _tool_functions()
+    tools["store"].search.return_value = [
+        {"node_id": "v_only", "file_path": "v.py", "start_line": 1, "end_line": 1, "raw_signature": "def v()", "summary": "v"},
+        {"node_id": "both", "file_path": "b.py", "start_line": 1, "end_line": 1, "raw_signature": "def both()", "summary": "both"},
+    ]
+    tools["store"].search_symbol.return_value = [
+        {"node_id": "both", "file_path": "b.py", "start_line": 1, "end_line": 1, "raw_signature": "def both()", "summary": "both"},
+        {"node_id": "bm25_only", "file_path": "b2.py", "start_line": 1, "end_line": 1, "raw_signature": "def bm25()", "summary": "b"},
+    ]
+    payload = json.loads(tools["hybrid_search"]("q", top_k=3))
+    assert [row["node_id"] for row in payload] == ["both", "v_only", "bm25_only"]
+
+
+def test_cosk_hybrid_search_deduplicates_by_node_id() -> None:
+    tools = _tool_functions()
+    duplicate = {"node_id": "same", "file_path": "a.py", "start_line": 1, "end_line": 1, "raw_signature": "def same()", "summary": "s"}
+    tools["store"].search.return_value = [duplicate]
+    tools["store"].search_symbol.return_value = [duplicate]
+    payload = json.loads(tools["hybrid_search"]("q"))
+    assert [row["node_id"] for row in payload] == ["same"]
 
 
 def test_cosk_semantic_search_behavior_unchanged_with_optional_ctx_parameter() -> None:

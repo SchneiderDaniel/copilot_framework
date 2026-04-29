@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
@@ -441,3 +441,207 @@ def test_upsert_uses_docstring_then_raw_signature_fallback_for_summary(monkeypat
     rows = merge.execute.call_args.args[0]
     assert rows[0]["summary"] == "Useful docs"
     assert rows[1]["summary"] == "def two()"
+
+
+def test_build_row_sets_node_name_from_raw_signature() -> None:
+    store = SkeletonNodeVectorStore(embedding_provider=FakeEmbeddingProvider([[1.0]]))
+    row = store._build_row(_sample_node(signature="async def authenticate_user(token: str) -> User:"), [1.0])  # noqa: SLF001
+    assert row["node_name"] == "authenticate_user"
+
+
+def test_schema_includes_node_name_column() -> None:
+    schema = SkeletonNodeVectorStore._schema(2)  # noqa: SLF001
+    assert schema.get_field_index("node_name") >= 0
+
+
+def test_rebuild_index_creates_symbol_fts_indexes(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = SkeletonNodeVectorStore(embedding_provider=FakeEmbeddingProvider([[1.0]]))
+    monkeypatch.setattr(store, "validate_index", lambda: True)
+    staging = MagicMock()
+    target = MagicMock()
+    db = MagicMock()
+    db.create_table.side_effect = [staging, target]
+    monkeypatch.setattr("cosk.indexing.vector_store.lancedb.connect", MagicMock(return_value=db))
+    store.rebuild_index([_sample_node()])
+    target.create_fts_index.assert_any_call("node_name", name="node_name_idx", replace=True)
+    target.create_fts_index.assert_any_call("raw_signature", name="raw_signature_idx", replace=True)
+
+
+def test_upsert_nodes_refreshes_symbol_fts_indexes(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = SkeletonNodeVectorStore(embedding_provider=FakeEmbeddingProvider([[1.0]]))
+    merge = MagicMock()
+    table = MagicMock()
+    table.merge_insert.return_value = merge
+    merge.when_matched_update_all.return_value = merge
+    merge.when_not_matched_insert_all.return_value = merge
+    db = MagicMock()
+    db.open_table.return_value = table
+    monkeypatch.setattr("cosk.indexing.vector_store.lancedb.connect", MagicMock(return_value=db))
+    store.upsert_nodes([_sample_node()])
+    table.create_fts_index.assert_any_call("node_name", name="node_name_idx", replace=False)
+    table.create_fts_index.assert_any_call("raw_signature", name="raw_signature_idx", replace=False)
+
+
+def test_search_symbol_exact_uses_multimatch_with_boosted_node_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = SkeletonNodeVectorStore(embedding_provider=FakeEmbeddingProvider([[1.0]]))
+    table = MagicMock()
+    table.schema.get_field_index.return_value = 0
+    table.index_stats.return_value = object()
+    table.search.return_value.limit.return_value.to_list.return_value = []
+    db = MagicMock()
+    db.open_table.return_value = table
+    monkeypatch.setattr("cosk.indexing.vector_store.lancedb.connect", MagicMock(return_value=db))
+    query_ctor = Mock(return_value=object())
+    monkeypatch.setattr("cosk.indexing.vector_store._LANCEDB_MULTI_MATCH_QUERY", query_ctor)
+    store.search_symbol("authenticate_user")
+    query_ctor.assert_called_once_with("authenticate_user", ["node_name", "raw_signature"], boosts=[3.0, 1.0])
+
+
+def test_search_symbol_fuzzy_uses_matchquery_with_fuzziness_distance(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = SkeletonNodeVectorStore(embedding_provider=FakeEmbeddingProvider([[1.0]]))
+    table = MagicMock()
+    table.schema.get_field_index.return_value = 0
+    table.index_stats.return_value = object()
+    table.search.return_value.limit.return_value.to_list.return_value = []
+    db = MagicMock()
+    db.open_table.return_value = table
+    monkeypatch.setattr("cosk.indexing.vector_store.lancedb.connect", MagicMock(return_value=db))
+    query_ctor = Mock(return_value=object())
+    monkeypatch.setattr("cosk.indexing.vector_store._LANCEDB_MATCH_QUERY", query_ctor)
+    store.search_symbol("authentcate_user", fuzzy=True, distance=2)
+    query_ctor.assert_called_once_with("authentcate_user", "node_name", fuzziness=2)
+
+
+@pytest.mark.parametrize("query", ["", "   "])
+def test_search_symbol_blank_query_raises(query: str) -> None:
+    store = SkeletonNodeVectorStore(embedding_provider=FakeEmbeddingProvider([[1.0]]))
+    with pytest.raises(ValueError, match="blank"):
+        store.search_symbol(query)
+
+
+@pytest.mark.parametrize("top_k", [0, -1])
+def test_search_symbol_non_positive_top_k_raises(top_k: int) -> None:
+    store = SkeletonNodeVectorStore(embedding_provider=FakeEmbeddingProvider([[1.0]]))
+    with pytest.raises(ValueError, match="top_k must be > 0"):
+        store.search_symbol("auth", top_k=top_k)
+
+
+def test_search_symbol_negative_distance_raises() -> None:
+    store = SkeletonNodeVectorStore(embedding_provider=FakeEmbeddingProvider([[1.0]]))
+    with pytest.raises(ValueError, match="distance must be >= 0"):
+        store.search_symbol("auth", fuzzy=True, distance=-1)
+
+
+def test_search_symbol_legacy_schema_raises_rebuild_required_error(tmp_path: Path) -> None:
+    db_dir = tmp_path / ".lancedb"
+    db = SkeletonNodeVectorStore(db_dir=db_dir, embedding_provider=FakeEmbeddingProvider([[1.0]]))._connect()  # noqa: SLF001
+    db.create_table(
+        "skeleton_nodes",
+        data=[
+            {
+                "node_id": "n1",
+                "file_path": "a.py",
+                "start_line": 1,
+                "end_line": 1,
+                "raw_signature": "def authenticate_user():",
+                "summary": "docs",
+                "vector": [1.0],
+            }
+        ],
+    )
+    store = SkeletonNodeVectorStore(db_dir=db_dir, embedding_provider=FakeEmbeddingProvider([[1.0]]))
+    with pytest.raises(RuntimeError, match="rebuild"):
+        store.search_symbol("authenticate_user")
+
+
+def test_search_symbol_returns_empty_when_table_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = SkeletonNodeVectorStore(embedding_provider=FakeEmbeddingProvider([[1.0]]))
+    db = MagicMock()
+    db.open_table.side_effect = RuntimeError("missing")
+    monkeypatch.setattr("cosk.indexing.vector_store.lancedb.connect", MagicMock(return_value=db))
+    assert store.search_symbol("authenticate_user") == []
+
+
+def test_search_symbol_returns_metadata_only_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = SkeletonNodeVectorStore(embedding_provider=FakeEmbeddingProvider([[1.0]]))
+    table = MagicMock()
+    table.schema.get_field_index.return_value = 0
+    table.index_stats.return_value = object()
+    table.search.return_value.limit.return_value.to_list.return_value = [
+        {
+            "node_id": "n1",
+            "file_path": "a.py",
+            "start_line": 1,
+            "end_line": 2,
+            "raw_signature": "def authenticate_user():",
+            "summary": "docs",
+            "vector": [1.0],
+            "_score": 9.9,
+        }
+    ]
+    db = MagicMock()
+    db.open_table.return_value = table
+    monkeypatch.setattr("cosk.indexing.vector_store.lancedb.connect", MagicMock(return_value=db))
+    results = store.search_symbol("authenticate_user")
+    assert results == [
+        {
+            "node_id": "n1",
+            "file_path": "a.py",
+            "start_line": 1,
+            "end_line": 2,
+            "raw_signature": "def authenticate_user():",
+            "summary": "docs",
+        }
+    ]
+
+
+def test_search_by_name_behavior_unchanged_after_node_name_column_added(tmp_path: Path) -> None:
+    provider = FakeEmbeddingProvider([[1.0], [1.0]])
+    store = SkeletonNodeVectorStore(db_dir=tmp_path / ".lancedb", embedding_provider=provider)
+    store.rebuild_index(
+        [
+            _sample_node(start_line=1, signature="class Service:", docstring=""),
+            _sample_node(start_line=2, signature="def process(self):", docstring=""),
+        ]
+    )
+    results = store.search_by_name("process", kind="any")
+    assert len(results) == 1
+    assert results[0]["raw_signature"] == "def process(self):"
+
+
+def test_search_symbol_requires_lancedb_fts_capability_or_raises_clear_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    provider = FakeEmbeddingProvider([[1.0]])
+    store = SkeletonNodeVectorStore(db_dir=tmp_path / ".lancedb", embedding_provider=provider)
+    store.rebuild_index([_sample_node(signature="def authenticate_user():")])
+    monkeypatch.setattr("cosk.indexing.vector_store._LANCEDB_MATCH_QUERY", None)
+    monkeypatch.setattr("cosk.indexing.vector_store._LANCEDB_MULTI_MATCH_QUERY", None)
+    with pytest.raises(RuntimeError, match="MatchQuery"):
+        store.search_symbol("authenticate_user")
+
+
+@pytest.mark.integration
+def test_search_symbol_integration_exact_symbol_hit_prefers_node_name(tmp_path: Path) -> None:
+    provider = FakeEmbeddingProvider([[1.0, 0.0], [0.0, 1.0]])
+    store = SkeletonNodeVectorStore(db_dir=tmp_path / ".lancedb", embedding_provider=provider)
+    store.rebuild_index(
+        [
+            _sample_node(start_line=1, signature="def authenticate_user(token: str):", docstring=""),
+            _sample_node(start_line=5, signature="def authenticate_session(user):", docstring=""),
+        ]
+    )
+    results = store.search_symbol("authenticate_user", top_k=2)
+    assert results
+    assert results[0]["raw_signature"].startswith("def authenticate_user")
+
+
+@pytest.mark.integration
+def test_search_symbol_integration_fuzzy_distance_controls_matching(tmp_path: Path) -> None:
+    provider = FakeEmbeddingProvider([[1.0, 0.0]])
+    store = SkeletonNodeVectorStore(db_dir=tmp_path / ".lancedb", embedding_provider=provider)
+    store.rebuild_index([_sample_node(start_line=1, signature="def alpha(token: str):", docstring="")])
+    strict_results = store.search_symbol("alphx", top_k=5, fuzzy=True, distance=0)
+    fuzzy_results = store.search_symbol("alphx", top_k=5, fuzzy=True, distance=1)
+    assert not strict_results
+    assert any("alpha" in row["raw_signature"] for row in fuzzy_results)

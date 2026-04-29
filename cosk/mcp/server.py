@@ -18,6 +18,7 @@ Error Behaviors:
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from importlib import import_module
 import json
 import os
@@ -230,6 +231,33 @@ def create_mcp_server(
         context = _resolve_context(index_name)
         return context.vector_store if context is not None else vector_store
 
+    def _hybrid_rrf_merge(
+        bm25_results: list[dict[str, object]],
+        vector_results: list[dict[str, object]],
+        *,
+        top_k: int,
+        rrf_k: int = 60,
+    ) -> list[dict[str, object]]:
+        scores: dict[str, float] = {}
+        payloads: dict[str, dict[str, object]] = {}
+
+        for rank, row in enumerate(bm25_results, start=1):
+            node_id = str(row.get("node_id", ""))
+            if not node_id:
+                continue
+            payloads.setdefault(node_id, row)
+            scores[node_id] = scores.get(node_id, 0.0) + (1.0 / (rrf_k + rank))
+
+        for rank, row in enumerate(vector_results, start=1):
+            node_id = str(row.get("node_id", ""))
+            if not node_id:
+                continue
+            payloads.setdefault(node_id, row)
+            scores[node_id] = scores.get(node_id, 0.0) + (1.0 / (rrf_k + rank))
+
+        ranked_node_ids = sorted(scores.keys(), key=lambda node_id: scores[node_id], reverse=True)
+        return [payloads[node_id] for node_id in ranked_node_ids[:top_k]]
+
     @mcp.tool()
     def cosk_semantic_search(
         query_string: str,
@@ -287,6 +315,84 @@ def create_mcp_server(
         except Exception as exc:  # noqa: BLE001
             raise McpError(
                 mcp_types.ErrorData(code=mcp_types.INTERNAL_ERROR, message=f"cosk_search_by_name failed: {exc}")
+            ) from exc
+
+    @mcp.tool()
+    def cosk_symbol_search(
+        symbol_name: str,
+        top_k: int | None = None,
+        fuzzy: bool = False,
+        distance: int = 0,
+        index_name: str | None = None,
+        ctx: Context | None = None,
+    ) -> str:
+        if not symbol_name or not symbol_name.strip():
+            raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="symbol_name must not be blank"))
+        if distance < 0:
+            raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="distance must be >= 0"))
+        try:
+            resolved_top_k, warnings = resolve_top_k(top_k, config)
+        except TopKValidationError as exc:
+            raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message=str(exc))) from exc
+
+        try:
+            results = _resolve_store(index_name).search_symbol(
+                symbol_name.strip(),
+                resolved_top_k,
+                fuzzy=fuzzy,
+                distance=distance,
+            )
+            enriched, token_warnings = enrich_search_results(results)
+            record_search_origin(ctx, enriched)
+            if ctx is not None and hasattr(ctx, "info"):
+                for warning in [*warnings, *token_warnings]:
+                    ctx.info(warning)
+            return json.dumps(enriched)
+        except ValueError as exc:
+            raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message=str(exc))) from exc
+        except McpError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise McpError(
+                mcp_types.ErrorData(code=mcp_types.INTERNAL_ERROR, message=f"cosk_symbol_search failed: {exc}")
+            ) from exc
+
+    @mcp.tool()
+    def cosk_hybrid_search(
+        query: str,
+        top_k: int | None = None,
+        index_name: str | None = None,
+        ctx: Context | None = None,
+    ) -> str:
+        if not query or not query.strip():
+            raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message="query must not be blank"))
+        try:
+            resolved_top_k, warnings = resolve_top_k(top_k, config)
+        except TopKValidationError as exc:
+            raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message=str(exc))) from exc
+
+        normalized_query = query.strip()
+        try:
+            store = _resolve_store(index_name)
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                vector_future = executor.submit(store.search, normalized_query, top_k=resolved_top_k)
+                bm25_future = executor.submit(store.search_symbol, normalized_query, resolved_top_k, fuzzy=False)
+                vector_results = vector_future.result()
+                bm25_results = bm25_future.result()
+            merged = _hybrid_rrf_merge(bm25_results, vector_results, top_k=resolved_top_k)
+            enriched, token_warnings = enrich_search_results(merged)
+            record_search_origin(ctx, enriched)
+            if ctx is not None and hasattr(ctx, "info"):
+                for warning in [*warnings, *token_warnings]:
+                    ctx.info(warning)
+            return json.dumps(enriched)
+        except ValueError as exc:
+            raise McpError(mcp_types.ErrorData(code=mcp_types.INVALID_PARAMS, message=str(exc))) from exc
+        except McpError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise McpError(
+                mcp_types.ErrorData(code=mcp_types.INTERNAL_ERROR, message=f"cosk_hybrid_search failed: {exc}")
             ) from exc
 
     def _core_get_neighbors(node_id: str, index_name: str | None) -> str:
