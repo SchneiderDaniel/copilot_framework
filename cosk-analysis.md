@@ -163,6 +163,75 @@ That is a lot of moving parts for a tool whose core output may still be thinner 
 
 ---
 
+## Comparison with other high-starred AST-oriented agent repositories
+
+Below, “high-starred” means popular open repositories with clear adoption signals as of 2026-05-04.
+
+| Project | Approx. stars | AST / structure approach | What it seems to optimize for | How it compares to Cosk |
+|---|---:|---|---|---|
+| **Cline** (`cline/cline`) | ~61k | README explicitly says it analyzes “file structure & source code ASTs” during agent work | tightly integrated IDE agent loop | Stronger product position than Cosk because AST understanding is embedded inside the agent workflow, not exposed as a separate index the user must maintain |
+| **Aider** (`Aider-AI/aider`) | ~44k | `aider/repomap.py` uses tree-sitter via `grep_ast` to extract defs/refs and build a ranked repo map | practical repo understanding for terminal coding sessions | Simpler and more battle-tested wedge than Cosk; less ambitious than “semantic graph platform,” but easier to justify because it directly improves code editing sessions |
+| **Graphify** (`safishamsi/graphify`) | ~42k | README/pyproject position it as a tree-sitter-based knowledge graph for many coding agents | persistent graph/report artifact for agents | Closest conceptual competitor to Cosk, but broader and more opinionated: it sells a reusable knowledge graph artifact, not just MCP retrieval tools |
+
+### What this comparison suggests
+
+### 1. The successful repos usually make AST an ingredient, not the whole product thesis
+
+- **Cline** uses ASTs inside a full agent UX.
+- **Aider** uses tree-sitter to make repo maps better.
+- **Graphify** uses tree-sitter as the extraction layer for a bigger “memory layer / knowledge graph” story.
+
+Cosk, by contrast, is much closer to:
+
+> “the indexing/search layer itself is the product”
+
+That is a harder position to win from.
+
+### 2. Aider shows the value of a narrower wedge
+
+Aider does not need a general semantic index with MCP-first framing to be useful.
+It uses AST-derived structure to make a concrete workflow better: helping the model understand the repo well enough to edit code effectively.
+
+That is strategically important: it suggests that **AST absolutely has value for agents**, but the winning packaging may be **task-specific** rather than “universal code intelligence server.”
+
+### 3. Cline shows the likely market direction
+
+Cline’s README describes AST analysis as part of the agent’s normal exploration loop.
+That is probably closer to where the market goes:
+
+- agent embedded in IDE/runtime,
+- code understanding hidden behind the UX,
+- no visible “please keep your separate index fresh” burden.
+
+This is a meaningful challenge to Cosk’s standalone value proposition.
+
+### 4. Graphify shows that a graph artifact can be compelling — but only if it feels bigger than search
+
+Graphify’s pitch is not just “search your code semantically.”
+It is:
+
+- build a graph,
+- generate a report,
+- commit artifacts,
+- let every assistant consume the same memory layer.
+
+That is a broader and more legible story than Cosk’s current pitch.
+
+### 5. None of these comparisons prove Cosk is doomed
+
+But they do suggest that the strongest public projects in this space are winning through one of these shapes:
+
+1. **agent UX first** (Cline),
+2. **editing workflow first** (Aider),
+3. **shared artifact / memory layer first** (Graphify).
+
+Cosk currently sits in a weaker middle:
+
+- not as complete as an end-user agent,
+- not as focused as a repo-map wedge,
+- not as opinionated as a full memory-layer artifact.
+
+---
 ## The strongest argument **against** continuing Cosk as a standalone project
 
 If you step back, Cosk may be squeezed from both sides:
